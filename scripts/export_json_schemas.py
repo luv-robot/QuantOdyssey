@@ -1,0 +1,123 @@
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app.models import (
+    AlternativeDataMetric,
+    BacktestReport,
+    BacktestValidationReport,
+    BaselineComparisonReport,
+    BaselineResult,
+    CandidateRankingResult,
+    CrossSymbolValidationReport,
+    DataQualityReport,
+    EnhancedReviewMetrics,
+    ExperimentManifest,
+    ExperimentQueueItem,
+    FundingRatePoint,
+    MarketSignal,
+    MarketRegimeSnapshot,
+    ModelResponseLog,
+    NegativeResultCase,
+    MonteCarloBacktestConfig,
+    MonteCarloBacktestReport,
+    OhlcvCandle,
+    OpenInterestPoint,
+    OrderBookSnapshot,
+    PaperFill,
+    PaperOrder,
+    PaperPortfolio,
+    PaperPosition,
+    PaperTradingPlan,
+    PaperTradingReport,
+    PaperVsBacktestComparison,
+    PortfolioExposure,
+    PortfolioRiskLimits,
+    PortfolioRiskReport,
+    PromptLog,
+    ResourceBudgetReport,
+    ResearchThesis,
+    RealBacktestValidationSuiteReport,
+    ResearchAssetIndexEntry,
+    ReviewCase,
+    RobustnessReport,
+    RiskAuditResult,
+    StrategyManifest,
+    StrategyCandidate,
+    SymbolValidationResult,
+    StrategyLifecycleDecision,
+    StrategyRegistryEntry,
+    StrategySimilarityResult,
+    StrategyVersion,
+    TradeRecord,
+    TradeSummary,
+    WorkflowRun,
+)
+
+
+MODELS = [
+    MarketSignal,
+    MarketRegimeSnapshot,
+    OhlcvCandle,
+    FundingRatePoint,
+    OpenInterestPoint,
+    OrderBookSnapshot,
+    DataQualityReport,
+    AlternativeDataMetric,
+    SymbolValidationResult,
+    CrossSymbolValidationReport,
+    RealBacktestValidationSuiteReport,
+    PaperPortfolio,
+    PaperOrder,
+    PaperFill,
+    PaperPosition,
+    PaperTradingPlan,
+    PaperTradingReport,
+    PaperVsBacktestComparison,
+    PortfolioExposure,
+    PortfolioRiskLimits,
+    PortfolioRiskReport,
+    StrategyManifest,
+    StrategyVersion,
+    StrategyRegistryEntry,
+    StrategyLifecycleDecision,
+    StrategySimilarityResult,
+    TradeRecord,
+    TradeSummary,
+    EnhancedReviewMetrics,
+    ExperimentManifest,
+    ExperimentQueueItem,
+    ResourceBudgetReport,
+    PromptLog,
+    ModelResponseLog,
+    NegativeResultCase,
+    StrategyCandidate,
+    CandidateRankingResult,
+    ResearchThesis,
+    ResearchAssetIndexEntry,
+    RiskAuditResult,
+    BacktestReport,
+    BaselineResult,
+    BaselineComparisonReport,
+    MonteCarloBacktestConfig,
+    MonteCarloBacktestReport,
+    BacktestValidationReport,
+    RobustnessReport,
+    ReviewCase,
+    WorkflowRun,
+]
+
+
+def main() -> None:
+    output_dir = Path("schemas")
+    output_dir.mkdir(exist_ok=True)
+    for model in MODELS:
+        schema_path = output_dir / f"{model.__name__}.schema.json"
+        schema_path.write_text(json.dumps(model.model_json_schema(), indent=2), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,14 @@
+.git
+.venv
+.venv311
+.tools
+.pytest_cache
+__pycache__
+*.pyc
+*.sqlite3
+schemas
+logs
+freqtrade_user_data/data
+freqtrade_user_data/backtest_results
+quant_odyssey.egg-info
+build

@@ -1,0 +1,35 @@
+{
+	email {$ACME_EMAIL}
+}
+
+(secure_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+quantodyssey.com {
+	import secure_headers
+	import /etc/caddy/auth.caddy
+	encode zstd gzip
+
+	@n8n_webhooks path /webhook/* /webhook-test/*
+	@valid_n8n_webhook {
+		path /webhook/* /webhook-test/*
+		header X-QuantOdyssey-Webhook-Secret {$N8N_WEBHOOK_SECRET}
+	}
+	handle @valid_n8n_webhook {
+		reverse_proxy n8n:5678
+	}
+	handle @n8n_webhooks {
+		respond "missing or invalid webhook secret" 401
+	}
+
+	handle {
+		reverse_proxy app:8501
+	}
+}

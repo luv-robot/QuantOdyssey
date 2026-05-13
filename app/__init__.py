@@ -1,0 +1,1 @@
+"""Quant Odyssey application package."""

@@ -1,0 +1,56 @@
+{
+  "id": "quant-odyssey-research-thesis-intake",
+  "name": "QuantOdyssey Research Thesis Intake",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "research-thesis",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "research-thesis-webhook",
+      "name": "Research Thesis Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "quant-odyssey-research-thesis"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json; const subject = encodeURIComponent(`[QuantOdyssey] Research thesis: ${body.title || 'untitled'}`); const text = JSON.stringify(body, null, 2); const mailto = `mailto:luweiword@gmail.com?subject=${subject}&body=${encodeURIComponent(text)}`; return [{ json: { ok: true, received: body, notify: { email: 'luweiword@gmail.com', mailto }, note: 'SMTP/Gmail credentials are required for fully automatic email sending. This workflow returns a mailto link until credentials are configured.' } }];"
+      },
+      "id": "build-mailto-notification",
+      "name": "Build Mailto Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    }
+  ],
+  "connections": {
+    "Research Thesis Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Mailto Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mailto Notification": {
+      "main": [[]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "1"
+}
