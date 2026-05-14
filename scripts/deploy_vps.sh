@@ -20,6 +20,7 @@ rsync -az --delete \
   --exclude "__pycache__" \
   --exclude "*.pyc" \
   --exclude "*.sqlite3" \
+  --exclude "caddy/auth.caddy" \
   --exclude "build" \
   --exclude "*.egg-info" \
   --exclude "schemas" \

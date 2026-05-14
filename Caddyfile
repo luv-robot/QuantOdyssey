@@ -14,7 +14,6 @@
 
 quantodyssey.com {
 	import secure_headers
-	import /etc/caddy/auth.caddy
 	encode zstd gzip
 
 	@n8n_webhooks path /webhook/* /webhook-test/*
@@ -30,6 +29,7 @@ quantodyssey.com {
 	}
 
 	handle {
+		import /etc/caddy/auth.caddy
 		reverse_proxy app:8501
 	}
 }
