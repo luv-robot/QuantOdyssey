@@ -48,6 +48,19 @@ docker compose -f docker-compose.vps.yml exec -T app \
 Archive backfill saves structured orderflow bars by default. Use `--save-raw`
 only for small windows because raw aggregate trades can grow quickly.
 
+Backfill only dates that overlap Failed Breakout event windows:
+
+```bash
+cd /home/codexboy/QuantOdyssey
+docker compose -f docker-compose.vps.yml exec -T app \
+  python scripts/backfill_orderflow_for_failed_breakout_events.py \
+  --max-days 3 \
+  --execute
+```
+
+Omit `--execute` to print the event-date plan without downloading archive files.
+Keep `--max-days` small until the planned symbols and dates look reasonable.
+
 Orderflow validation is scheduled by `orderflow-validation-scheduler`.
 It runs health checks and Failed Breakout orderflow acceptance validation every 6 hours by default.
 
