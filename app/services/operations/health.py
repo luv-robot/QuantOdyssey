@@ -25,6 +25,7 @@ DEFAULT_TABLES = (
     "failed_breakout_universe_reports",
     "strategy_family_walk_forward_reports",
     "strategy_family_monte_carlo_reports",
+    "strategy_family_orderflow_acceptance_reports",
     "strategy_registry",
     "backtests",
     "monte_carlo_backtests",

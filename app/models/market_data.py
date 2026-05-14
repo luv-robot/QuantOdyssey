@@ -74,6 +74,25 @@ class AggregateTrade(BaseModel):
     raw: dict[str, Any]
 
 
+class OrderflowBar(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    interval: str = Field(min_length=1)
+    open_time: datetime
+    close_time: datetime
+    buy_volume: float = Field(ge=0)
+    sell_volume: float = Field(ge=0)
+    buy_quote_volume: float = Field(ge=0)
+    sell_quote_volume: float = Field(ge=0)
+    net_taker_volume: float
+    net_taker_quote_volume: float
+    cumulative_volume_delta: float
+    taker_buy_ratio: float = Field(ge=0, le=1)
+    trade_count: int = Field(ge=0)
+    vwap: float | None = None
+
+
 class OrderBookLevel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

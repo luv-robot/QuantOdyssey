@@ -547,6 +547,56 @@ def simulate_failed_breakout_trial_returns(
     )
 
 
+def scan_failed_breakout_trial_events(
+    candles: list[OhlcvCandle],
+    *,
+    timeframe: str,
+    trial_id: str,
+    horizon_hours: int = 2,
+    fee_rate: float = 0.001,
+) -> list[dict]:
+    """Replay one Failed Breakout trial id and return event metadata plus fixed-horizon return."""
+    params = parse_failed_breakout_trial_id(trial_id)
+    sorted_candles = sorted(candles, key=lambda item: item.open_time)
+    horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    event_scan = _failed_breakout_event_scan(
+        sorted_candles,
+        side=str(params["side"]),
+        level_source=str(params["level_source"]),
+        level_lookback_bars=int(params["level_lookback_bars"]),
+        level_quality_threshold=float(params["level_quality_threshold"]),
+        breakout_depth_bps=float(params["breakout_depth_bps"]),
+        acceptance_window_bars=int(params["acceptance_window_bars"]),
+        acceptance_failure_threshold=float(params["acceptance_failure_threshold"]),
+        volume_zscore_threshold=float(params["volume_zscore_threshold"]),
+    )
+    events: list[dict] = []
+    next_available_index = 0
+    for event in event_scan["events"]:
+        index = int(event["index"])
+        if index < next_available_index or index + horizon_bars >= len(sorted_candles):
+            continue
+        entry = sorted_candles[index].close
+        exit_ = sorted_candles[index + horizon_bars].close
+        if entry <= 0 or exit_ <= 0:
+            continue
+        side = str(params["side"])
+        trade_return = entry / exit_ - 1 - fee_rate if side == "short" else exit_ / entry - 1 - fee_rate
+        events.append(
+            {
+                **event,
+                "index": index,
+                "event_time": sorted_candles[index].open_time,
+                "side": side,
+                "trial_id": trial_id,
+                "trade_return": trade_return,
+                "acceptance_window_bars": int(params["acceptance_window_bars"]),
+            }
+        )
+        next_available_index = index + horizon_bars
+    return events
+
+
 def _precompute_features(
     candles: list[OhlcvCandle],
     funding_rates: list[FundingRatePoint],

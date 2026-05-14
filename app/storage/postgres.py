@@ -22,6 +22,7 @@ from app.models import (
     FailedBreakoutSensitivityReport,
     FailedBreakoutUniverseReport,
     ExperimentQueueItem,
+    AggregateTrade,
     FundingRatePoint,
     MarketSignal,
     MarketRegimeSnapshot,
@@ -31,6 +32,7 @@ from app.models import (
     OhlcvCandle,
     OpenInterestPoint,
     OrderBookSnapshot,
+    OrderflowBar,
     PaperFill,
     PaperOrder,
     PaperPortfolio,
@@ -53,6 +55,7 @@ from app.models import (
     RobustnessReport,
     RiskAuditResult,
     StrategyFamilyMonteCarloReport,
+    StrategyFamilyOrderflowAcceptanceReport,
     StrategyFamilyWalkForwardReport,
     StrategyManifest,
     StrategyLifecycleDecision,
@@ -404,6 +407,16 @@ class StrategyFamilyWalkForwardReportRecord(Base):
 
 class StrategyFamilyMonteCarloReportRecord(Base):
     __tablename__ = "strategy_family_monte_carlo_reports"
+
+    report_id = Column(String, primary_key=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    source_universe_report_id = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class StrategyFamilyOrderflowAcceptanceReportRecord(Base):
+    __tablename__ = "strategy_family_orderflow_acceptance_reports"
 
     report_id = Column(String, primary_key=True)
     strategy_family = Column(String, index=True, nullable=False)
@@ -818,6 +831,51 @@ class QuantRepository:
     def get_orderbook(self, dataset_id: str) -> Optional[OrderBookSnapshot]:
         record = self._get(MarketDataRecord, dataset_id)
         return None if record is None else _load(OrderBookSnapshot, record.payload)
+
+    def save_aggregate_trades(
+        self,
+        dataset_id: str,
+        symbol: str,
+        trades: list[AggregateTrade],
+    ) -> list[AggregateTrade]:
+        payload = "[" + ",".join(_dump(trade) for trade in trades) + "]"
+        self._save_market_data(dataset_id, "aggregate_trade", symbol, payload)
+        return trades
+
+    def get_aggregate_trades(self, dataset_id: str) -> list[AggregateTrade]:
+        record = self._get(MarketDataRecord, dataset_id)
+        if record is None:
+            return []
+        return [AggregateTrade.model_validate(item) for item in json.loads(record.payload)]
+
+    def save_orderflow_bars(
+        self,
+        dataset_id: str,
+        symbol: str,
+        bars: list[OrderflowBar],
+    ) -> list[OrderflowBar]:
+        payload = "[" + ",".join(_dump(bar) for bar in bars) + "]"
+        self._save_market_data(dataset_id, "orderflow_bar", symbol, payload)
+        return bars
+
+    def get_orderflow_bars(self, dataset_id: str) -> list[OrderflowBar]:
+        record = self._get(MarketDataRecord, dataset_id)
+        if record is None:
+            return []
+        return [OrderflowBar.model_validate(item) for item in json.loads(record.payload)]
+
+    def query_market_data_dataset_ids(
+        self,
+        data_type: str,
+        symbol: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[str]:
+        with self._session() as session:
+            query = session.query(MarketDataRecord).filter(MarketDataRecord.data_type == data_type)
+            if symbol is not None:
+                query = query.filter(MarketDataRecord.symbol == symbol)
+            records = query.order_by(MarketDataRecord.created_at.desc()).limit(limit).all()
+            return [record.dataset_id for record in records]
 
     def save_data_quality_report(self, report: DataQualityReport) -> DataQualityReport:
         with self._session() as session:
@@ -1632,6 +1690,50 @@ class QuantRepository:
                 )
             records = query.order_by(StrategyFamilyMonteCarloReportRecord.created_at.desc()).limit(limit).all()
             return [_load(StrategyFamilyMonteCarloReport, record.payload) for record in records]
+
+    def save_strategy_family_orderflow_acceptance_report(
+        self,
+        report: StrategyFamilyOrderflowAcceptanceReport,
+    ) -> StrategyFamilyOrderflowAcceptanceReport:
+        with self._session() as session:
+            session.merge(
+                StrategyFamilyOrderflowAcceptanceReportRecord(
+                    report_id=report.report_id,
+                    strategy_family=report.strategy_family,
+                    source_universe_report_id=report.source_universe_report_id,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_strategy_family_orderflow_acceptance_report(
+        self,
+        report_id: str,
+    ) -> Optional[StrategyFamilyOrderflowAcceptanceReport]:
+        record = self._get(StrategyFamilyOrderflowAcceptanceReportRecord, report_id)
+        return None if record is None else _load(StrategyFamilyOrderflowAcceptanceReport, record.payload)
+
+    def query_strategy_family_orderflow_acceptance_reports(
+        self,
+        strategy_family: Optional[str] = None,
+        source_universe_report_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[StrategyFamilyOrderflowAcceptanceReport]:
+        with self._session() as session:
+            query = session.query(StrategyFamilyOrderflowAcceptanceReportRecord)
+            if strategy_family is not None:
+                query = query.filter(
+                    StrategyFamilyOrderflowAcceptanceReportRecord.strategy_family == strategy_family
+                )
+            if source_universe_report_id is not None:
+                query = query.filter(
+                    StrategyFamilyOrderflowAcceptanceReportRecord.source_universe_report_id
+                    == source_universe_report_id
+                )
+            records = query.order_by(
+                StrategyFamilyOrderflowAcceptanceReportRecord.created_at.desc()
+            ).limit(limit).all()
+            return [_load(StrategyFamilyOrderflowAcceptanceReport, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:

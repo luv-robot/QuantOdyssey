@@ -28,6 +28,8 @@ from app.models.harness import (
     ResearchTaskStatus,
     ResearchTaskType,
     StrategyFamilyMonteCarloReport,
+    StrategyFamilyOrderflowAcceptanceEvent,
+    StrategyFamilyOrderflowAcceptanceReport,
     StrategyFamilyBaselineBoard,
     StrategyFamilyBaselineRow,
     StrategyFamilyWalkForwardReport,
@@ -46,6 +48,7 @@ from app.models.market_data import (
     OpenInterestPoint,
     OrderBookLevel,
     OrderBookSnapshot,
+    OrderflowBar,
 )
 from app.models.negative_result import NegativeResultCase
 from app.models.llm_log import ModelResponseLog, PromptLog
@@ -168,6 +171,7 @@ __all__ = [
     "OpenInterestPoint",
     "OrderBookLevel",
     "OrderBookSnapshot",
+    "OrderflowBar",
     "PaperEvaluationStatus",
     "PaperFill",
     "PaperOrder",
@@ -220,6 +224,8 @@ __all__ = [
     "StrategyFamilyBaselineBoard",
     "StrategyFamilyBaselineRow",
     "StrategyFamilyMonteCarloReport",
+    "StrategyFamilyOrderflowAcceptanceEvent",
+    "StrategyFamilyOrderflowAcceptanceReport",
     "StrategyFamilyWalkForwardReport",
     "StrategyFamilyWalkForwardWindow",
     "StrategyScreeningAction",

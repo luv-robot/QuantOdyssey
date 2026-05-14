@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import random
+from datetime import timezone
 from statistics import mean, median, pstdev
 from uuid import uuid4
 
 from app.models import (
     FailedBreakoutUniverseReport,
     OhlcvCandle,
+    OrderflowBar,
     StrategyFamilyMonteCarloReport,
+    StrategyFamilyOrderflowAcceptanceEvent,
+    StrategyFamilyOrderflowAcceptanceReport,
     StrategyFamilyWalkForwardReport,
     StrategyFamilyWalkForwardWindow,
 )
 from app.services.harness.event_definition import (
     parse_failed_breakout_trial_id,
+    scan_failed_breakout_trial_events,
     simulate_failed_breakout_trial_returns,
 )
 
@@ -296,6 +301,109 @@ def run_failed_breakout_bootstrap_monte_carlo(
     )
 
 
+def run_failed_breakout_orderflow_acceptance_validation(
+    *,
+    universe_report: FailedBreakoutUniverseReport,
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    orderflow_by_cell: dict[tuple[str, str], list[OrderflowBar]],
+    horizon_hours: int = 2,
+    max_events_per_cell: int = 100,
+    min_events_with_orderflow: int = 30,
+    min_confirmation_rate: float = 0.5,
+    max_conflict_rate: float = 0.35,
+) -> StrategyFamilyOrderflowAcceptanceReport:
+    """Use taker-flow/CVD bars to judge whether failed breakouts were genuinely not accepted."""
+    evidence_events: list[StrategyFamilyOrderflowAcceptanceEvent] = []
+    analyzed = 0
+    skipped: list[str] = []
+    for cell in universe_report.cells:
+        if cell.best_trial_id is None:
+            skipped.append(f"{cell.symbol}:{cell.timeframe}:missing_best_trial")
+            continue
+        candles = candles_by_cell.get((cell.symbol, cell.timeframe))
+        orderflow_bars = orderflow_by_cell.get((cell.symbol, cell.timeframe))
+        if not candles:
+            skipped.append(f"{cell.symbol}:{cell.timeframe}:missing_candles")
+            continue
+        if not orderflow_bars:
+            skipped.append(f"{cell.symbol}:{cell.timeframe}:missing_orderflow")
+            continue
+        try:
+            params = parse_failed_breakout_trial_id(cell.best_trial_id)
+        except ValueError:
+            skipped.append(f"{cell.symbol}:{cell.timeframe}:unparseable_trial_id")
+            continue
+        event_items = scan_failed_breakout_trial_events(
+            candles,
+            timeframe=cell.timeframe,
+            trial_id=cell.best_trial_id,
+            horizon_hours=horizon_hours,
+        )
+        analyzed += len(event_items)
+        for event in event_items[-max_events_per_cell:]:
+            window = _orderflow_window(
+                orderflow_bars,
+                event_time=event["event_time"],
+                timeframe=cell.timeframe,
+                window_bars=int(params["acceptance_window_bars"]),
+            )
+            if not window:
+                continue
+            evidence_events.append(
+                _orderflow_event_from_window(
+                    symbol=cell.symbol,
+                    timeframe=cell.timeframe,
+                    trial_id=cell.best_trial_id,
+                    event=event,
+                    window=window,
+                )
+            )
+
+    events_with_orderflow = len(evidence_events)
+    confirms = sum(1 for event in evidence_events if event.confirms_failure)
+    conflicts = sum(1 for event in evidence_events if event.conflicts_with_failure)
+    confirmation_rate = confirms / events_with_orderflow if events_with_orderflow else 0.0
+    conflict_rate = conflicts / events_with_orderflow if events_with_orderflow else 0.0
+    passed = (
+        events_with_orderflow >= min_events_with_orderflow
+        and confirmation_rate >= min_confirmation_rate
+        and conflict_rate <= max_conflict_rate
+    )
+    findings = [
+        (
+            f"Analyzed {analyzed} Failed Breakout event(s); "
+            f"{events_with_orderflow} had overlapping orderflow bars."
+        ),
+        (
+            f"Orderflow confirmation rate={confirmation_rate:.1%}; "
+            f"conflict rate={conflict_rate:.1%}."
+        ),
+    ]
+    if skipped:
+        findings.append(f"Skipped {len(skipped)} cell(s): {', '.join(skipped)}.")
+    if not passed:
+        findings.append(
+            "Orderflow gate did not pass; do not treat OHLCV-only failed-breakout evidence as mature."
+        )
+    else:
+        findings.append("Orderflow evidence supports failed-breakout non-acceptance for this sample.")
+
+    return StrategyFamilyOrderflowAcceptanceReport(
+        report_id=f"strategy_family_orderflow_acceptance_{uuid4().hex[:8]}",
+        strategy_family=universe_report.strategy_family,
+        source_universe_report_id=universe_report.report_id,
+        events_analyzed=analyzed,
+        events_with_orderflow=events_with_orderflow,
+        confirms_failure_count=confirms,
+        conflicts_count=conflicts,
+        confirmation_rate=round(confirmation_rate, 6),
+        conflict_rate=round(conflict_rate, 6),
+        passed=passed,
+        events=evidence_events,
+        findings=findings,
+    )
+
+
 def _split_candles(candles: list[OhlcvCandle], folds: int) -> list[list[OhlcvCandle]]:
     sorted_candles = sorted(candles, key=lambda item: item.open_time)
     if folds <= 1:
@@ -309,6 +417,85 @@ def _split_candles(candles: list[OhlcvCandle], folds: int) -> list[list[OhlcvCan
             break
         slices.append(sorted_candles[start:end])
     return slices
+
+
+def _orderflow_window(
+    orderflow_bars: list[OrderflowBar],
+    *,
+    event_time,
+    timeframe: str,
+    window_bars: int,
+) -> list[OrderflowBar]:
+    window_seconds = _timeframe_seconds(timeframe) * max(1, window_bars)
+    event_seconds = _timestamp_utc(event_time)
+    start_seconds = event_seconds - window_seconds
+    end_seconds = event_seconds + _timeframe_seconds(timeframe)
+    return [
+        bar
+        for bar in orderflow_bars
+        if start_seconds <= _timestamp_utc(bar.open_time) < end_seconds
+    ]
+
+
+def _orderflow_event_from_window(
+    *,
+    symbol: str,
+    timeframe: str,
+    trial_id: str,
+    event: dict,
+    window: list[OrderflowBar],
+) -> StrategyFamilyOrderflowAcceptanceEvent:
+    buy_volume = sum(bar.buy_volume for bar in window)
+    sell_volume = sum(bar.sell_volume for bar in window)
+    total_volume = buy_volume + sell_volume
+    net_volume = buy_volume - sell_volume
+    cvd_change = window[-1].cumulative_volume_delta - window[0].cumulative_volume_delta
+    taker_buy_ratio = buy_volume / total_volume if total_volume else 0.0
+    side = str(event["side"])
+    if side == "short":
+        confirms = taker_buy_ratio >= 0.55 and float(event["trade_return"]) > 0
+        conflicts = taker_buy_ratio >= 0.55 and float(event["trade_return"]) <= 0
+        notes = ["aggressive_buyers_trapped"] if confirms else []
+    else:
+        confirms = taker_buy_ratio <= 0.45 and float(event["trade_return"]) > 0
+        conflicts = taker_buy_ratio <= 0.45 and float(event["trade_return"]) <= 0
+        notes = ["aggressive_sellers_trapped"] if confirms else []
+    if not confirms and not conflicts:
+        notes.append("orderflow_not_decisive")
+    return StrategyFamilyOrderflowAcceptanceEvent(
+        event_id=f"orderflow_event_{uuid4().hex[:8]}",
+        symbol=symbol,
+        timeframe=timeframe,
+        trial_id=trial_id,
+        side=side,
+        event_time=event["event_time"],
+        trade_return=round(float(event["trade_return"]), 6),
+        total_aggressive_volume=round(total_volume, 8),
+        taker_buy_ratio=round(taker_buy_ratio, 6),
+        net_taker_volume=round(net_volume, 8),
+        cvd_change=round(cvd_change, 8),
+        confirms_failure=confirms,
+        conflicts_with_failure=conflicts,
+        notes=notes,
+    )
+
+
+def _timeframe_seconds(timeframe: str) -> int:
+    unit = timeframe[-1]
+    value = int(timeframe[:-1])
+    if unit == "m":
+        return max(1, value * 60)
+    if unit == "h":
+        return max(1, value * 3600)
+    if unit == "s":
+        return max(1, value)
+    return 60
+
+
+def _timestamp_utc(value) -> float:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
 
 
 def _simple_failed_breakout_trial_id(side: str) -> str:

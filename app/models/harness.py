@@ -246,6 +246,43 @@ class StrategyFamilyMonteCarloReport(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class StrategyFamilyOrderflowAcceptanceEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    timeframe: str = Field(min_length=1)
+    trial_id: str = Field(min_length=1)
+    side: str = Field(min_length=1)
+    event_time: datetime
+    trade_return: float
+    total_aggressive_volume: float = Field(ge=0)
+    taker_buy_ratio: float = Field(ge=0, le=1)
+    net_taker_volume: float
+    cvd_change: float
+    confirms_failure: bool
+    conflicts_with_failure: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class StrategyFamilyOrderflowAcceptanceReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    source_universe_report_id: str = Field(min_length=1)
+    events_analyzed: int = Field(ge=0)
+    events_with_orderflow: int = Field(ge=0)
+    confirms_failure_count: int = Field(ge=0)
+    conflicts_count: int = Field(ge=0)
+    confirmation_rate: float = Field(ge=0, le=1)
+    conflict_rate: float = Field(ge=0, le=1)
+    passed: bool
+    events: list[StrategyFamilyOrderflowAcceptanceEvent] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class EventDefinitionSensitivityTrial(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -11,6 +11,7 @@ from app.services.market_data.freqtrade_files import (
     load_freqtrade_ohlcv,
     load_open_interest_points,
 )
+from app.services.market_data.orderflow import build_orderflow_bars
 from app.services.market_data.signal_builder import build_market_signal_from_dataset
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "FundingCrowdingEventResult",
     "build_funding_crowding_fade_event",
     "build_market_signal_from_dataset",
+    "build_orderflow_bars",
     "clean_ohlcv",
     "find_freqtrade_funding_file",
     "find_open_interest_file",

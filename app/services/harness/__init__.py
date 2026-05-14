@@ -4,6 +4,7 @@ from app.services.harness.event_definition import (
     parse_failed_breakout_trial_id,
     run_failed_breakout_event_definition_sensitivity,
     run_funding_crowding_event_definition_sensitivity,
+    scan_failed_breakout_trial_events,
     simulate_failed_breakout_trial_returns,
 )
 from app.services.harness.research_loop import build_research_harness_cycle
@@ -15,6 +16,7 @@ from app.services.harness.screening import (
 )
 from app.services.harness.validation import (
     run_failed_breakout_bootstrap_monte_carlo,
+    run_failed_breakout_orderflow_acceptance_validation,
     run_failed_breakout_walk_forward_validation,
 )
 
@@ -29,7 +31,9 @@ __all__ = [
     "parse_failed_breakout_trial_id",
     "run_failed_breakout_bootstrap_monte_carlo",
     "run_failed_breakout_event_definition_sensitivity",
+    "run_failed_breakout_orderflow_acceptance_validation",
     "run_failed_breakout_walk_forward_validation",
     "run_funding_crowding_event_definition_sensitivity",
+    "scan_failed_breakout_trial_events",
     "simulate_failed_breakout_trial_returns",
 ]

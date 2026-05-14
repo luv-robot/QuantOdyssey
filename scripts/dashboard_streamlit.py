@@ -40,6 +40,7 @@ KEY_TABLES = [
     "failed_breakout_universe_reports",
     "strategy_family_walk_forward_reports",
     "strategy_family_monte_carlo_reports",
+    "strategy_family_orderflow_acceptance_reports",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -453,7 +454,13 @@ def _render_strategy_family_validation_followups(engine, thesis_id: str) -> None
             "source_universe_report_id",
             source_id,
         )
-        if not walk_forward_reports and not monte_carlo_reports:
+        orderflow_reports = _records_where_payload_field(
+            engine,
+            "strategy_family_orderflow_acceptance_reports",
+            "source_universe_report_id",
+            source_id,
+        )
+        if not walk_forward_reports and not monte_carlo_reports and not orderflow_reports:
             continue
         if not rendered:
             st.write("**Strategy Family Validation Follow-ups**")
@@ -474,6 +481,13 @@ def _render_strategy_family_validation_followups(engine, thesis_id: str) -> None
                     st.success("Monte Carlo passed")
                 else:
                     st.warning("Monte Carlo did not pass")
+                st.json(report)
+            for report in orderflow_reports:
+                st.metric("Orderflow confirmation rate", f"{report.get('confirmation_rate', 0):.1%}")
+                if report.get("passed"):
+                    st.success("Orderflow acceptance passed")
+                else:
+                    st.warning("Orderflow acceptance did not pass")
                 st.json(report)
 
 
@@ -527,6 +541,7 @@ def main() -> None:
             "Asset Index",
             "Strategy Family WF",
             "Strategy Family MC",
+            "Orderflow Acceptance",
             "Strategy Registry",
             "Experiments",
             "Experiment Queue",
@@ -557,6 +572,7 @@ def main() -> None:
         "Asset Index": "research_asset_index",
         "Strategy Family WF": "strategy_family_walk_forward_reports",
         "Strategy Family MC": "strategy_family_monte_carlo_reports",
+        "Orderflow Acceptance": "strategy_family_orderflow_acceptance_reports",
         "Strategy Registry": "strategy_registry",
         "Experiments": "experiment_manifests",
         "Experiment Queue": "experiment_queue",
