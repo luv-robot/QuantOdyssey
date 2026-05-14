@@ -47,9 +47,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--grid",
-        choices=["smoke", "full"],
+        choices=["fast", "smoke", "full"],
         default="smoke",
-        help="Use a small representative grid by default; choose full for the complete 108-trial matrix.",
+        help=(
+            "Use smoke by default; choose fast for rolling-extreme cross-market triage, "
+            "or full for the complete matrix."
+        ),
     )
     parser.add_argument("--max-trials", type=int, default=200)
     parser.add_argument("--save", action="store_true")
@@ -166,6 +169,16 @@ def _freqtrade_symbol(symbol: str) -> str:
 def _grid_kwargs(grid: str) -> dict:
     if grid == "full":
         return {}
+    if grid == "fast":
+        return {
+            "level_sources": ("rolling_extreme",),
+            "level_lookback_bars": (48, 96),
+            "level_quality_thresholds": (0,),
+            "breakout_depth_bps": (25, 50),
+            "acceptance_window_bars": (3, 6),
+            "acceptance_failure_thresholds": (0,),
+            "volume_zscore_thresholds": (0, 1.5),
+        }
     return {
         "level_sources": ("rolling_extreme", "swing_extreme"),
         "level_lookback_bars": (48, 96),
