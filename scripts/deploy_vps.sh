@@ -20,10 +20,13 @@ rsync -az --delete \
   --exclude "__pycache__" \
   --exclude "*.pyc" \
   --exclude "*.sqlite3" \
+  --exclude "build" \
+  --exclude "*.egg-info" \
   --exclude "schemas" \
   --exclude "logs" \
   --exclude "freqtrade_user_data/data" \
   --exclude "freqtrade_user_data/backtest_results" \
+  --exclude "freqtrade_user_data/strategies/*.py" \
   ./ "$USER@$HOST:$REMOTE_DIR/"
 
 ssh "$USER@$HOST" "cd '$REMOTE_DIR' && test -f .env || cp .env.vps.example .env"
