@@ -8,7 +8,7 @@ from app.models import (
     StrategyFamily,
 )
 from app.services.harness import run_failed_breakout_orderflow_acceptance_validation
-from app.services.market_data import build_orderflow_bars
+from app.services.market_data import build_orderflow_bars, collect_symbol_orderflow_once
 from app.storage import QuantRepository
 
 
@@ -41,6 +41,52 @@ def test_repository_persists_aggregate_trades_and_orderflow_bars() -> None:
     assert repository.get_aggregate_trades("agg_dataset") == trades
     assert repository.get_orderflow_bars("of_dataset") == bars
     assert repository.query_market_data_dataset_ids("orderflow_bar", symbol="BTC/USDT:USDT") == ["of_dataset"]
+
+
+def test_collect_symbol_orderflow_once_uses_incremental_state() -> None:
+    repository = QuantRepository()
+    client = _FakeAggTradeClient(
+        {
+            None: [
+                _trade(10, buyer_is_maker=False, quantity=2),
+                _trade(11, buyer_is_maker=True, quantity=1),
+            ],
+            12: [_trade(12, buyer_is_maker=False, quantity=3)],
+            13: [],
+        }
+    )
+    state = {}
+
+    result = collect_symbol_orderflow_once(
+        symbol="BTC/USDT:USDT",
+        trading_mode="futures",
+        client=client,
+        repository=repository,
+        state=state,
+        limit=2,
+        max_pages=2,
+        bar_interval="1m",
+    )
+
+    assert result["status"] == "saved"
+    assert result["trade_count"] == 3
+    assert state["futures:BTC/USDT:USDT"]["last_aggregate_trade_id"] == 12
+    orderflow = repository.get_orderflow_bars(result["orderflow_dataset_id"])
+    assert orderflow[-1].cumulative_volume_delta == 4
+
+    second_result = collect_symbol_orderflow_once(
+        symbol="BTC/USDT:USDT",
+        trading_mode="futures",
+        client=client,
+        repository=repository,
+        state=state,
+        limit=2,
+        max_pages=2,
+        bar_interval="1m",
+    )
+
+    assert second_result["status"] == "no_new_trades"
+    assert client.calls[-1] == 13
 
 
 def test_failed_breakout_orderflow_acceptance_report_uses_taker_flow() -> None:
@@ -87,6 +133,23 @@ def _trade(
         buyer_is_maker=buyer_is_maker,
         raw={},
     )
+
+
+class _FakeAggTradeClient:
+    def __init__(self, responses: dict[int | None, list[AggregateTrade]]) -> None:
+        self.responses = responses
+        self.calls: list[int | None] = []
+
+    def fetch_aggregate_trades(
+        self,
+        symbol: str,
+        *,
+        limit: int,
+        trading_mode: str,
+        from_id: int | None = None,
+    ) -> list[AggregateTrade]:
+        self.calls.append(from_id)
+        return self.responses.get(from_id, [])[:limit]
 
 
 def _universe_report() -> FailedBreakoutUniverseReport:

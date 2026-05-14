@@ -70,6 +70,28 @@ services:
       prefect:
         condition: service_started
 
+  orderflow-collector:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: python scripts/continuous_orderflow_collector.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      POSTGRES_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      ORDERFLOW_SYMBOLS: "${ORDERFLOW_SYMBOLS:-BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT}"
+      ORDERFLOW_TRADING_MODE: "${ORDERFLOW_TRADING_MODE:-futures}"
+      ORDERFLOW_POLL_SECONDS: "${ORDERFLOW_POLL_SECONDS:-60}"
+      ORDERFLOW_LIMIT: "${ORDERFLOW_LIMIT:-1000}"
+      ORDERFLOW_MAX_PAGES_PER_SYMBOL: "${ORDERFLOW_MAX_PAGES_PER_SYMBOL:-3}"
+      ORDERFLOW_BAR_INTERVAL: "${ORDERFLOW_BAR_INTERVAL:-1m}"
+      ORDERFLOW_STATE_PATH: "${ORDERFLOW_STATE_PATH:-/app/logs/orderflow_collector_state.json}"
+    volumes:
+      - app_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16
     restart: unless-stopped
