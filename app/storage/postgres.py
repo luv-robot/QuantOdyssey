@@ -52,6 +52,8 @@ from app.models import (
     RealBacktestValidationSuiteReport,
     RobustnessReport,
     RiskAuditResult,
+    StrategyFamilyMonteCarloReport,
+    StrategyFamilyWalkForwardReport,
     StrategyManifest,
     StrategyLifecycleDecision,
     StrategyRegistryEntry,
@@ -386,6 +388,26 @@ class FailedBreakoutUniverseReportRecord(Base):
     signal_id = Column(String, index=True)
     thesis_id = Column(String, index=True)
     strategy_family = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class StrategyFamilyWalkForwardReportRecord(Base):
+    __tablename__ = "strategy_family_walk_forward_reports"
+
+    report_id = Column(String, primary_key=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    source_universe_report_id = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class StrategyFamilyMonteCarloReportRecord(Base):
+    __tablename__ = "strategy_family_monte_carlo_reports"
+
+    report_id = Column(String, primary_key=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    source_universe_report_id = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1532,6 +1554,84 @@ class QuantRepository:
                 query = query.filter(FailedBreakoutUniverseReportRecord.strategy_family == strategy_family)
             records = query.order_by(FailedBreakoutUniverseReportRecord.created_at.desc()).limit(limit).all()
             return [_load(FailedBreakoutUniverseReport, record.payload) for record in records]
+
+    def save_strategy_family_walk_forward_report(
+        self,
+        report: StrategyFamilyWalkForwardReport,
+    ) -> StrategyFamilyWalkForwardReport:
+        with self._session() as session:
+            session.merge(
+                StrategyFamilyWalkForwardReportRecord(
+                    report_id=report.report_id,
+                    strategy_family=report.strategy_family,
+                    source_universe_report_id=report.source_universe_report_id,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_strategy_family_walk_forward_report(
+        self,
+        report_id: str,
+    ) -> Optional[StrategyFamilyWalkForwardReport]:
+        record = self._get(StrategyFamilyWalkForwardReportRecord, report_id)
+        return None if record is None else _load(StrategyFamilyWalkForwardReport, record.payload)
+
+    def query_strategy_family_walk_forward_reports(
+        self,
+        strategy_family: Optional[str] = None,
+        source_universe_report_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[StrategyFamilyWalkForwardReport]:
+        with self._session() as session:
+            query = session.query(StrategyFamilyWalkForwardReportRecord)
+            if strategy_family is not None:
+                query = query.filter(StrategyFamilyWalkForwardReportRecord.strategy_family == strategy_family)
+            if source_universe_report_id is not None:
+                query = query.filter(
+                    StrategyFamilyWalkForwardReportRecord.source_universe_report_id == source_universe_report_id
+                )
+            records = query.order_by(StrategyFamilyWalkForwardReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(StrategyFamilyWalkForwardReport, record.payload) for record in records]
+
+    def save_strategy_family_monte_carlo_report(
+        self,
+        report: StrategyFamilyMonteCarloReport,
+    ) -> StrategyFamilyMonteCarloReport:
+        with self._session() as session:
+            session.merge(
+                StrategyFamilyMonteCarloReportRecord(
+                    report_id=report.report_id,
+                    strategy_family=report.strategy_family,
+                    source_universe_report_id=report.source_universe_report_id,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_strategy_family_monte_carlo_report(
+        self,
+        report_id: str,
+    ) -> Optional[StrategyFamilyMonteCarloReport]:
+        record = self._get(StrategyFamilyMonteCarloReportRecord, report_id)
+        return None if record is None else _load(StrategyFamilyMonteCarloReport, record.payload)
+
+    def query_strategy_family_monte_carlo_reports(
+        self,
+        strategy_family: Optional[str] = None,
+        source_universe_report_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[StrategyFamilyMonteCarloReport]:
+        with self._session() as session:
+            query = session.query(StrategyFamilyMonteCarloReportRecord)
+            if strategy_family is not None:
+                query = query.filter(StrategyFamilyMonteCarloReportRecord.strategy_family == strategy_family)
+            if source_universe_report_id is not None:
+                query = query.filter(
+                    StrategyFamilyMonteCarloReportRecord.source_universe_report_id == source_universe_report_id
+                )
+            records = query.order_by(StrategyFamilyMonteCarloReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(StrategyFamilyMonteCarloReport, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import timezone
 from statistics import mean, pstdev
 from uuid import uuid4
@@ -491,6 +492,58 @@ def run_failed_breakout_event_definition_sensitivity(
         level_source_counts={} if best_trial is None else best_trial.level_source_counts,
         data_warnings=list(dict.fromkeys(data_warnings)),
         findings=findings,
+    )
+
+
+def parse_failed_breakout_trial_id(trial_id: str) -> dict[str, str | int | float]:
+    """Decode a Failed Breakout trial id into the event-definition parameters it represents."""
+    pattern = re.compile(
+        r"^trial_(?P<side>short|long)_(?P<level_source>.+)"
+        r"_lb(?P<lookback>\d+)"
+        r"_lq(?P<quality>[0-9mp]+)"
+        r"_d(?P<depth>[0-9mp]+)"
+        r"_aw(?P<acceptance_window>\d+)"
+        r"_af(?P<acceptance_failure>[0-9mp]+)"
+        r"_vz(?P<volume>[0-9mp]+)$"
+    )
+    match = pattern.match(trial_id)
+    if match is None:
+        raise ValueError(f"Unsupported Failed Breakout trial id: {trial_id}")
+    return {
+        "side": match.group("side"),
+        "level_source": match.group("level_source"),
+        "level_lookback_bars": int(match.group("lookback")),
+        "level_quality_threshold": _parse_threshold_token(match.group("quality")),
+        "breakout_depth_bps": _parse_threshold_token(match.group("depth")),
+        "acceptance_window_bars": int(match.group("acceptance_window")),
+        "acceptance_failure_threshold": _parse_threshold_token(match.group("acceptance_failure")),
+        "volume_zscore_threshold": _parse_threshold_token(match.group("volume")),
+    }
+
+
+def simulate_failed_breakout_trial_returns(
+    candles: list[OhlcvCandle],
+    *,
+    timeframe: str,
+    trial_id: str,
+    horizon_hours: int = 2,
+    fee_rate: float = 0.001,
+) -> list[float]:
+    """Replay one encoded Failed Breakout trial id and return its non-overlapping trade returns."""
+    params = parse_failed_breakout_trial_id(trial_id)
+    horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    return _simulate_failed_breakout_returns(
+        sorted(candles, key=lambda item: item.open_time),
+        sides=(str(params["side"]),),
+        level_source=str(params["level_source"]),
+        level_lookback_bars=int(params["level_lookback_bars"]),
+        level_quality_threshold=float(params["level_quality_threshold"]),
+        breakout_depth_bps=float(params["breakout_depth_bps"]),
+        acceptance_window_bars=int(params["acceptance_window_bars"]),
+        acceptance_failure_threshold=float(params["acceptance_failure_threshold"]),
+        volume_zscore_threshold=float(params["volume_zscore_threshold"]),
+        horizon_bars=horizon_bars,
+        fee_rate=fee_rate,
     )
 
 
@@ -1288,6 +1341,10 @@ def _bars_for_duration(timeframe: str, hours: int) -> int:
 
 def _fmt_threshold(value: float) -> str:
     return str(value).replace(".", "p").replace("-", "m")
+
+
+def _parse_threshold_token(value: str) -> float:
+    return float(value.replace("m", "-").replace("p", "."))
 
 
 def _safe_symbol(symbol: str) -> str:

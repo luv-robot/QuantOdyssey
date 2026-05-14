@@ -183,6 +183,69 @@ class StrategyScreeningDecision(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class StrategyFamilyWalkForwardWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    window_id: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    timeframe: str = Field(min_length=1)
+    trial_id: str = Field(min_length=1)
+    fold_index: int = Field(ge=0)
+    start_at: datetime
+    end_at: datetime
+    trade_count: int = Field(ge=0)
+    total_return: float
+    profit_factor: float = Field(ge=0)
+    sharpe: float | None = None
+    max_drawdown: float = Field(le=0)
+    baseline_total_return: float
+    baseline_trade_count: int = Field(ge=0)
+    beats_baseline: bool
+    passed: bool
+    findings: list[str] = Field(default_factory=list)
+
+
+class StrategyFamilyWalkForwardReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    source_universe_report_id: str = Field(min_length=1)
+    folds: int = Field(ge=1)
+    min_trades_per_window: int = Field(ge=1)
+    completed_windows: int = Field(ge=0)
+    passed_windows: int = Field(ge=0)
+    pass_rate: float = Field(ge=0, le=1)
+    passed: bool
+    windows: list[StrategyFamilyWalkForwardWindow] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StrategyFamilyMonteCarloReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    source_universe_report_id: str = Field(min_length=1)
+    source_trial_ids: list[str] = Field(default_factory=list)
+    simulations: int = Field(ge=1)
+    horizon_trades: int = Field(ge=1)
+    sampled_trade_count: int = Field(ge=0)
+    expected_return_mean: float
+    median_return: float
+    p05_return: float
+    p95_return: float
+    probability_of_loss: float = Field(ge=0, le=1)
+    max_drawdown_median: float = Field(le=0)
+    max_drawdown_p05: float = Field(le=0)
+    requires_human_confirmation: bool
+    approved_to_run: bool
+    passed: bool
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class EventDefinitionSensitivityTrial(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
