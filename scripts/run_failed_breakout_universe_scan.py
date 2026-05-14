@@ -42,8 +42,14 @@ def main() -> int:
     parser.add_argument(
         "--max-candles",
         type=int,
-        default=20000,
+        default=5000,
         help="Limit each OHLCV cell to the most recent N candles; use 0 for full history.",
+    )
+    parser.add_argument(
+        "--grid",
+        choices=["smoke", "full"],
+        default="smoke",
+        help="Use a small representative grid by default; choose full for the complete 108-trial matrix.",
     )
     parser.add_argument("--max-trials", type=int, default=200)
     parser.add_argument("--save", action="store_true")
@@ -68,6 +74,7 @@ def main() -> int:
             candles = load_freqtrade_ohlcv(ohlcv_file, symbol, timeframe)
             if args.max_candles > 0 and len(candles) > args.max_candles:
                 candles = candles[-args.max_candles :]
+            grid_kwargs = _grid_kwargs(args.grid)
             report = run_failed_breakout_event_definition_sensitivity(
                 task=task,
                 candles=candles,
@@ -77,6 +84,7 @@ def main() -> int:
                 horizon_hours=args.horizon_hours,
                 min_trade_count=args.min_trade_count,
                 max_trials=args.max_trials,
+                **grid_kwargs,
             )
             reports.append(report)
             if args.save and repository is not None:
@@ -153,6 +161,17 @@ def _finding_from_report(report, task: ResearchTask) -> ResearchFinding:
 
 def _freqtrade_symbol(symbol: str) -> str:
     return symbol.replace("/", "_").replace(":", "_")
+
+
+def _grid_kwargs(grid: str) -> dict:
+    if grid == "full":
+        return {}
+    return {
+        "level_lookback_bars": (48, 96),
+        "breakout_depth_bps": (10, 25, 50),
+        "acceptance_window_bars": (3, 6),
+        "volume_zscore_thresholds": (0, 1.5),
+    }
 
 
 if __name__ == "__main__":
