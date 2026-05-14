@@ -356,6 +356,7 @@ def _data_file_check(userdir: Path, pair: str, timeframe: str, trading_mode: str
             if path.is_file()
             and path.suffix in {".feather", ".json", ".json.gz"}
             and all(token in path.name for token in tokens[:2])
+            and _matches_trading_mode_file(path, trading_mode)
         ]
         found = matches[0] if matches else None
     return {
@@ -382,13 +383,18 @@ def _data_file_candidates(
             f"{futures_name}-{timeframe}.feather",
             f"{futures_name}-{timeframe}.json",
             f"{spot_name}-{timeframe}-futures.feather",
-            *names,
         ]
     return [data_root / "binance" / name for name in names]
 
 
 def _pair_file_tokens(pair: str) -> list[str]:
     return [token for token in re.split(r"[/_:.-]+", pair) if token]
+
+
+def _matches_trading_mode_file(path: Path, trading_mode: str) -> bool:
+    if trading_mode != "futures":
+        return True
+    return "USDT_USDT" in path.name or "futures" in path.name
 
 
 def _failed_backtest(
