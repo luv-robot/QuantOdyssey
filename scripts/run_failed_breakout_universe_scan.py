@@ -167,9 +167,12 @@ def _grid_kwargs(grid: str) -> dict:
     if grid == "full":
         return {}
     return {
+        "level_sources": ("rolling_extreme", "swing_extreme"),
         "level_lookback_bars": (48, 96),
+        "level_quality_thresholds": (0,),
         "breakout_depth_bps": (10, 25, 50),
         "acceptance_window_bars": (3, 6),
+        "acceptance_failure_thresholds": (0,),
         "volume_zscore_thresholds": (0, 1.5),
     }
 

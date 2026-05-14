@@ -184,9 +184,12 @@ class FailedBreakoutSensitivityTrial(BaseModel):
 
     trial_id: str = Field(min_length=1)
     side: str = Field(min_length=1)
+    level_source: str = Field(default="rolling_extreme", min_length=1)
     level_lookback_bars: int = Field(ge=1)
+    level_quality_threshold: float = Field(default=0, ge=0, le=100)
     breakout_depth_bps: float = Field(ge=0)
     acceptance_window_bars: int = Field(ge=1)
+    acceptance_failure_threshold: float = Field(default=0, ge=0, le=100)
     volume_zscore_threshold: float = Field(ge=0)
     event_count: int = Field(ge=0)
     trade_count: int = Field(ge=0)
@@ -197,6 +200,10 @@ class FailedBreakoutSensitivityTrial(BaseModel):
     max_drawdown: float
     beats_cash: bool
     beats_simple_failed_breakout: bool
+    event_funnel: dict[str, int] = Field(default_factory=dict)
+    level_source_counts: dict[str, int] = Field(default_factory=dict)
+    average_level_quality_score: float = 0
+    average_acceptance_failure_score: float = 0
 
 
 class FailedBreakoutSensitivityReport(BaseModel):
@@ -220,6 +227,8 @@ class FailedBreakoutSensitivityReport(BaseModel):
     robust_trial_count: int = Field(ge=0)
     min_trade_count: int = Field(ge=1)
     trials: list[FailedBreakoutSensitivityTrial] = Field(default_factory=list)
+    event_funnel: dict[str, int] = Field(default_factory=dict)
+    level_source_counts: dict[str, int] = Field(default_factory=dict)
     data_warnings: list[str] = Field(default_factory=list)
     findings: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -34,9 +34,15 @@ def test_failed_breakout_event_definition_generates_report() -> None:
     assert report.search_budget_trials == 16
     assert report.best_trial is not None
     assert report.best_trial.trade_count > 0
+    assert report.best_trial.event_funnel["candidate_level_count"] >= report.best_trial.event_count
+    assert report.best_trial.event_funnel["return_inside_count"] >= report.best_trial.event_count
+    assert report.best_trial.average_level_quality_score > 0
+    assert report.best_trial.average_acceptance_failure_score > 0
+    assert report.event_funnel == report.best_trial.event_funnel
     assert report.simple_failed_breakout_trade_count > 0
     assert report.robust_trial_count >= 1
     assert any("Failed Breakout" in item for item in report.findings)
+    assert any("Best-trial funnel" in item for item in report.findings)
 
 
 def test_failed_breakout_universe_report_summarizes_cross_market_stability() -> None:
@@ -78,6 +84,30 @@ def test_failed_breakout_universe_report_summarizes_cross_market_stability() -> 
     assert universe.robust_trial_ids
     assert len(universe.cells) == 2
     assert btc_report.report_id in universe.child_report_ids
+
+
+def test_failed_breakout_v2_supports_swing_level_source_and_funnel() -> None:
+    report = run_failed_breakout_event_definition_sensitivity(
+        task=_sample_task(),
+        candles=_sample_candles(),
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        sides=("short",),
+        level_sources=("swing_extreme",),
+        level_lookback_bars=(24,),
+        breakout_depth_bps=(10,),
+        acceptance_window_bars=(3,),
+        volume_zscore_thresholds=(0,),
+        horizon_hours=1,
+        min_trade_count=2,
+    )
+
+    assert report.completed_trials == 1
+    assert report.best_trial is not None
+    assert report.best_trial.level_source == "swing_extreme"
+    assert report.best_trial.level_source_counts == {"swing_extreme": report.best_trial.event_count}
+    assert report.best_trial.event_funnel["breakout_count"] >= report.best_trial.event_count
+    assert report.best_trial.average_acceptance_failure_score > 0
 
 
 def test_repository_persists_failed_breakout_reports() -> None:
