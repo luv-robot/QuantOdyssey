@@ -14,7 +14,7 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.models import AggregateTrade  # noqa: E402
+from app.models import AggregateTrade, OrderflowBar  # noqa: E402
 from app.services.market_data import build_orderflow_bars  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
@@ -49,13 +49,24 @@ def main() -> int:
                 break
             url = _archive_url(symbol, day, args.trading_mode)
             try:
-                trades = _download_archive_trades(symbol, url, max_rows=args.max_rows_per_file)
+                if args.save_raw:
+                    trades = list(_iter_archive_trades(symbol, url, max_rows=args.max_rows_per_file))
+                    bars = build_orderflow_bars(trades, interval=args.bar_interval, start_cvd=cvd)
+                    trade_count = len(trades)
+                else:
+                    trades = []
+                    bars, trade_count = _download_archive_orderflow_bars(
+                        symbol,
+                        url,
+                        interval=args.bar_interval,
+                        start_cvd=cvd,
+                        max_rows=args.max_rows_per_file,
+                    )
             except HTTPError as exc:
                 if exc.code == 404 and not args.fail_on_missing:
                     results.append({"symbol": symbol, "date": day.isoformat(), "status": "missing", "url": url})
                     continue
                 raise
-            bars = build_orderflow_bars(trades, interval=args.bar_interval, start_cvd=cvd)
             if bars:
                 cvd = bars[-1].cumulative_volume_delta
             dataset_prefix = (
@@ -70,7 +81,7 @@ def main() -> int:
                     "symbol": symbol,
                     "date": day.isoformat(),
                     "status": "saved",
-                    "trade_count": len(trades),
+                    "trade_count": trade_count,
                     "bar_count": len(bars),
                     "orderflow_dataset_id": f"{dataset_prefix}:orderflow:{args.bar_interval}",
                     "raw_dataset_id": f"{dataset_prefix}:raw" if args.save_raw else None,
@@ -90,7 +101,74 @@ def _archive_url(symbol: str, day: date, trading_mode: str) -> str:
     return f"{BASE_URL}/{market_path}/daily/aggTrades/{api_symbol}/{api_symbol}-aggTrades-{day.isoformat()}.zip"
 
 
-def _download_archive_trades(symbol: str, url: str, *, max_rows: int = 0) -> list[AggregateTrade]:
+def _download_archive_orderflow_bars(
+    symbol: str,
+    url: str,
+    *,
+    interval: str,
+    start_cvd: float = 0.0,
+    max_rows: int = 0,
+) -> tuple[list[OrderflowBar], int]:
+    seconds = _interval_seconds(interval)
+    buckets: dict[datetime, dict[str, float | int]] = {}
+    trade_count = 0
+    for trade in _iter_archive_trades(symbol, url, max_rows=max_rows):
+        trade_count += 1
+        bucket = _floor_time(trade.timestamp, seconds)
+        metrics = buckets.setdefault(
+            bucket,
+            {
+                "buy_volume": 0.0,
+                "sell_volume": 0.0,
+                "buy_quote": 0.0,
+                "sell_quote": 0.0,
+                "trade_count": 0,
+            },
+        )
+        quote = trade.quantity * trade.price
+        if trade.buyer_is_maker:
+            metrics["sell_volume"] += trade.quantity
+            metrics["sell_quote"] += quote
+        else:
+            metrics["buy_volume"] += trade.quantity
+            metrics["buy_quote"] += quote
+        metrics["trade_count"] += max(1, trade.last_trade_id - trade.first_trade_id + 1)
+
+    cvd = start_cvd
+    bars = []
+    for open_time in sorted(buckets):
+        metrics = buckets[open_time]
+        buy_volume = float(metrics["buy_volume"])
+        sell_volume = float(metrics["sell_volume"])
+        buy_quote = float(metrics["buy_quote"])
+        sell_quote = float(metrics["sell_quote"])
+        net_volume = buy_volume - sell_volume
+        net_quote = buy_quote - sell_quote
+        total_volume = buy_volume + sell_volume
+        total_quote = buy_quote + sell_quote
+        cvd += net_volume
+        bars.append(
+            OrderflowBar(
+                symbol=symbol.upper(),
+                interval=interval,
+                open_time=open_time,
+                close_time=open_time + timedelta(seconds=seconds),
+                buy_volume=round(buy_volume, 8),
+                sell_volume=round(sell_volume, 8),
+                buy_quote_volume=round(buy_quote, 8),
+                sell_quote_volume=round(sell_quote, 8),
+                net_taker_volume=round(net_volume, 8),
+                net_taker_quote_volume=round(net_quote, 8),
+                cumulative_volume_delta=round(cvd, 8),
+                taker_buy_ratio=round(buy_volume / total_volume, 8) if total_volume else 0.0,
+                trade_count=int(metrics["trade_count"]),
+                vwap=round(total_quote / total_volume, 8) if total_volume else None,
+            )
+        )
+    return bars, trade_count
+
+
+def _iter_archive_trades(symbol: str, url: str, *, max_rows: int = 0):
     with urlopen(url, timeout=60) as response:
         blob = response.read()
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
@@ -101,14 +179,12 @@ def _download_archive_trades(symbol: str, url: str, *, max_rows: int = 0) -> lis
             first = next(rows)
             header = first if _looks_like_header(first) else None
             data_rows = rows if header else _prepend(first, rows)
-            trades = []
             for index, row in enumerate(data_rows):
                 if max_rows and index >= max_rows:
                     break
                 if not row:
                     continue
-                trades.append(_row_to_trade(symbol, row, header))
-    return trades
+                yield _row_to_trade(symbol, row, header)
 
 
 def _row_to_trade(symbol: str, row: list[str], header: list[str] | None) -> AggregateTrade:
@@ -164,6 +240,24 @@ def _bool(value: str | bool) -> bool:
 
 def _dt_from_ms(value: str) -> datetime:
     return datetime.utcfromtimestamp(int(value) / 1000)
+
+
+def _interval_seconds(interval: str) -> int:
+    unit = interval[-1]
+    value = int(interval[:-1])
+    if unit == "s":
+        return max(1, value)
+    if unit == "m":
+        return max(1, value * 60)
+    if unit == "h":
+        return max(1, value * 3600)
+    raise ValueError(f"Unsupported interval: {interval}")
+
+
+def _floor_time(value: datetime, seconds: int) -> datetime:
+    epoch = int(value.timestamp())
+    floored = epoch - (epoch % seconds)
+    return datetime.utcfromtimestamp(floored)
 
 
 def _date_range(start: date, end: date):
