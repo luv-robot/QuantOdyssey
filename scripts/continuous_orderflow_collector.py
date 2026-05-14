@@ -32,7 +32,7 @@ def main() -> int:
     )
     parser.add_argument("--poll-seconds", type=int, default=int(os.getenv("ORDERFLOW_POLL_SECONDS", "60")))
     parser.add_argument("--limit", type=int, default=int(os.getenv("ORDERFLOW_LIMIT", "1000")))
-    parser.add_argument("--max-pages", type=int, default=int(os.getenv("ORDERFLOW_MAX_PAGES_PER_SYMBOL", "3")))
+    parser.add_argument("--max-pages", type=int, default=int(os.getenv("ORDERFLOW_MAX_PAGES_PER_SYMBOL", "5")))
     parser.add_argument("--bar-interval", default=os.getenv("ORDERFLOW_BAR_INTERVAL", "1m"))
     parser.add_argument(
         "--state-path",
