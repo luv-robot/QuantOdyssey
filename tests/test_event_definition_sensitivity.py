@@ -10,7 +10,10 @@ from app.models import (
     ResearchTaskType,
     StrategyFamily,
 )
-from app.services.harness import run_funding_crowding_event_definition_sensitivity
+from app.services.harness import (
+    build_event_definition_universe_report,
+    run_funding_crowding_event_definition_sensitivity,
+)
 from app.storage import QuantRepository
 
 
@@ -56,6 +59,67 @@ def test_repository_persists_event_definition_sensitivity_report() -> None:
     assert repository.query_event_definition_sensitivity_reports(symbol="BTC/USDT:USDT") == [report]
 
 
+def test_universe_report_summarizes_cross_market_stability() -> None:
+    task = _sample_task()
+    btc_report = run_funding_crowding_event_definition_sensitivity(
+        task=task,
+        candles=_sample_candles(symbol="BTC/USDT:USDT"),
+        funding_rates=_sample_funding_rates(symbol="BTC/USDT:USDT"),
+        open_interest_points=_sample_open_interest(symbol="BTC/USDT:USDT"),
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        min_trade_count=2,
+    )
+    eth_report = run_funding_crowding_event_definition_sensitivity(
+        task=task,
+        candles=_sample_candles(symbol="ETH/USDT:USDT"),
+        funding_rates=_sample_funding_rates(symbol="ETH/USDT:USDT"),
+        open_interest_points=_sample_open_interest(symbol="ETH/USDT:USDT"),
+        symbol="ETH/USDT:USDT",
+        timeframe="5m",
+        min_trade_count=2,
+    )
+
+    universe = build_event_definition_universe_report(
+        task=task,
+        reports=[btc_report, eth_report],
+        min_market_confirmations=2,
+        min_trade_count=2,
+    )
+
+    assert universe.completed_cells == 2
+    assert universe.symbols == ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+    assert universe.robust_trial_ids
+    assert len(universe.cells) == 2
+    assert btc_report.report_id in universe.child_report_ids
+
+
+def test_repository_persists_event_definition_universe_report() -> None:
+    repository = QuantRepository()
+    task = _sample_task()
+    report = run_funding_crowding_event_definition_sensitivity(
+        task=task,
+        candles=_sample_candles(),
+        funding_rates=_sample_funding_rates(),
+        open_interest_points=_sample_open_interest(),
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        min_trade_count=2,
+    )
+    universe = build_event_definition_universe_report(
+        task=task,
+        reports=[report],
+        skipped_cells=["ETH/USDT:USDT:5m:missing_ohlcv"],
+        min_market_confirmations=1,
+        min_trade_count=2,
+    )
+
+    repository.save_event_definition_universe_report(universe)
+
+    assert repository.get_event_definition_universe_report(universe.report_id) == universe
+    assert repository.query_event_definition_universe_reports(thesis_id=task.thesis_id) == [universe]
+
+
 def _sample_task() -> ResearchTask:
     return ResearchTask(
         task_id="task_event_definition_test",
@@ -75,7 +139,7 @@ def _sample_task() -> ResearchTask:
     )
 
 
-def _sample_candles() -> list[OhlcvCandle]:
+def _sample_candles(symbol: str = "BTC/USDT:USDT") -> list[OhlcvCandle]:
     start = datetime(2024, 1, 1)
     event_indices = {330, 390, 450, 510, 570, 630}
     candles: list[OhlcvCandle] = []
@@ -102,7 +166,7 @@ def _sample_candles() -> list[OhlcvCandle]:
         low = min(low, open_, close)
         candles.append(
             OhlcvCandle(
-                symbol="BTC/USDT:USDT",
+                symbol=symbol,
                 interval="5m",
                 open_time=open_time,
                 close_time=open_time + timedelta(minutes=5),
@@ -119,7 +183,7 @@ def _sample_candles() -> list[OhlcvCandle]:
     return candles
 
 
-def _sample_funding_rates() -> list[FundingRatePoint]:
+def _sample_funding_rates(symbol: str = "BTC/USDT:USDT") -> list[FundingRatePoint]:
     start = datetime(2024, 1, 1)
     points: list[FundingRatePoint] = []
     for index in range(60):
@@ -129,7 +193,7 @@ def _sample_funding_rates() -> list[FundingRatePoint]:
             funding_rate = 0.001 + index * 0.00002
         points.append(
             FundingRatePoint(
-                symbol="BTC/USDT:USDT",
+                symbol=symbol,
                 funding_time=funding_time,
                 funding_rate=funding_rate,
                 raw={"date": funding_time.isoformat(), "fundingRate": funding_rate},
@@ -138,7 +202,7 @@ def _sample_funding_rates() -> list[FundingRatePoint]:
     return points
 
 
-def _sample_open_interest() -> list[OpenInterestPoint]:
+def _sample_open_interest(symbol: str = "BTC/USDT:USDT") -> list[OpenInterestPoint]:
     start = datetime(2024, 1, 1)
     event_indices = {330, 390, 450, 510, 570, 630}
     points: list[OpenInterestPoint] = []
@@ -149,7 +213,7 @@ def _sample_open_interest() -> list[OpenInterestPoint]:
             open_interest -= 160
         points.append(
             OpenInterestPoint(
-                symbol="BTC/USDT:USDT",
+                symbol=symbol,
                 timestamp=timestamp,
                 open_interest=open_interest,
                 raw={"timestamp": timestamp.isoformat(), "open_interest": open_interest},

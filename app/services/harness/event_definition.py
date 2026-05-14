@@ -7,12 +7,71 @@ from uuid import uuid4
 from app.models import (
     EventDefinitionSensitivityReport,
     EventDefinitionSensitivityTrial,
+    EventDefinitionUniverseCell,
+    EventDefinitionUniverseReport,
     FundingRatePoint,
     OhlcvCandle,
     OpenInterestPoint,
     ResearchTask,
     StrategyFamily,
 )
+
+
+def build_event_definition_universe_report(
+    *,
+    task: ResearchTask | None,
+    reports: list[EventDefinitionSensitivityReport],
+    skipped_cells: list[str] | None = None,
+    min_market_confirmations: int = 2,
+    min_trade_count: int = 20,
+) -> EventDefinitionUniverseReport:
+    """Aggregate per-market event-definition reports into a cross-market stability view."""
+    skipped_cells = skipped_cells or []
+    cells = [_cell_from_report(report) for report in reports]
+    robust_counts: dict[str, int] = {}
+    best_counts: dict[str, int] = {}
+    for report in reports:
+        if report.best_trial is not None:
+            best_counts[report.best_trial.trial_id] = best_counts.get(report.best_trial.trial_id, 0) + 1
+        for trial in report.trials:
+            if (
+                trial.trade_count >= min_trade_count
+                and trial.total_return > 0
+                and trial.profit_factor > 1
+                and trial.beats_funding_only
+            ):
+                robust_counts[trial.trial_id] = robust_counts.get(trial.trial_id, 0) + 1
+    robust_trial_ids = sorted(
+        [trial_id for trial_id, count in robust_counts.items() if count >= min_market_confirmations]
+    )
+    symbols = sorted({report.symbol for report in reports})
+    timeframes = sorted({report.timeframe for report in reports})
+    findings = _universe_findings(
+        reports=reports,
+        cells=cells,
+        skipped_cells=skipped_cells,
+        robust_trial_ids=robust_trial_ids,
+        robust_counts=robust_counts,
+        best_counts=best_counts,
+        min_market_confirmations=min_market_confirmations,
+    )
+    return EventDefinitionUniverseReport(
+        report_id=f"event_definition_universe_{uuid4().hex[:8]}",
+        task_id=None if task is None else task.task_id,
+        thesis_id=None if task is None else task.thesis_id,
+        signal_id=None if task is None else task.signal_id,
+        strategy_family=StrategyFamily.FUNDING_CROWDING_FADE.value,
+        symbols=symbols,
+        timeframes=timeframes,
+        completed_cells=len(reports),
+        skipped_cells=skipped_cells,
+        min_market_confirmations=min_market_confirmations,
+        robust_trial_ids=robust_trial_ids,
+        best_trial_frequency=dict(sorted(best_counts.items(), key=lambda item: (-item[1], item[0]))),
+        cells=cells,
+        child_report_ids=[report.report_id for report in reports],
+        findings=findings,
+    )
 
 
 def run_funding_crowding_event_definition_sensitivity(
@@ -215,6 +274,68 @@ def _precompute_features(
             item[f"failed_breakout_{max_failed_window}"] = _failed_breakout(candles, index, max_failed_window)
         features.append(item)
     return features
+
+
+def _cell_from_report(report: EventDefinitionSensitivityReport) -> EventDefinitionUniverseCell:
+    best = report.best_trial
+    return EventDefinitionUniverseCell(
+        report_id=report.report_id,
+        symbol=report.symbol,
+        timeframe=report.timeframe,
+        completed_trials=report.completed_trials,
+        robust_trial_count=report.robust_trial_count,
+        funding_only_total_return=report.funding_only_total_return,
+        funding_only_trade_count=report.funding_only_trade_count,
+        best_trial_id=None if best is None else best.trial_id,
+        best_trial_trade_count=0 if best is None else best.trade_count,
+        best_trial_total_return=0 if best is None else best.total_return,
+        best_trial_profit_factor=0 if best is None else best.profit_factor,
+        best_trial_sharpe=None if best is None else best.sharpe,
+        data_warnings=report.data_warnings,
+    )
+
+
+def _universe_findings(
+    *,
+    reports: list[EventDefinitionSensitivityReport],
+    cells: list[EventDefinitionUniverseCell],
+    skipped_cells: list[str],
+    robust_trial_ids: list[str],
+    robust_counts: dict[str, int],
+    best_counts: dict[str, int],
+    min_market_confirmations: int,
+) -> list[str]:
+    findings = [
+        f"Completed event-definition universe scan over {len(reports)} market/timeframe cell(s).",
+    ]
+    if skipped_cells:
+        findings.append(f"Skipped {len(skipped_cells)} cell(s): {', '.join(skipped_cells)}.")
+    if not reports:
+        findings.append("No usable market/timeframe cells were available.")
+        return findings
+    positive_best = sum(1 for cell in cells if cell.best_trial_total_return > 0)
+    sufficient_best = sum(1 for cell in cells if cell.best_trial_trade_count >= 20)
+    findings.append(
+        f"{positive_best}/{len(cells)} cell(s) had a positive best trial; "
+        f"{sufficient_best}/{len(cells)} best trials met the default 20-trade sample floor."
+    )
+    if robust_trial_ids:
+        counts = ", ".join(f"{trial_id}:{robust_counts[trial_id]}" for trial_id in robust_trial_ids)
+        findings.append(
+            f"Cross-market robust trial ids meeting {min_market_confirmations} confirmation(s): {counts}."
+        )
+    else:
+        findings.append(
+            f"No trial id met cross-market robust confirmation threshold={min_market_confirmations}; "
+            "treat isolated best cells as research leads, not alpha evidence."
+        )
+    if best_counts:
+        top_best = next(iter(dict(sorted(best_counts.items(), key=lambda item: (-item[1], item[0]))).items()))
+        findings.append(f"Most frequent best trial was {top_best[0]} in {top_best[1]} cell(s).")
+    warnings = sorted({warning for report in reports for warning in report.data_warnings})
+    if warnings:
+        findings.append(f"Data warnings observed: {', '.join(warnings)}.")
+    return findings
 
 
 def _trial_predicate(

@@ -16,6 +16,7 @@ from app.models import (
     DataQualityReport,
     EnhancedReviewMetrics,
     EventDefinitionSensitivityReport,
+    EventDefinitionUniverseReport,
     EventEpisode,
     ExperimentManifest,
     ExperimentQueueItem,
@@ -345,6 +346,18 @@ class EventDefinitionSensitivityReportRecord(Base):
     thesis_id = Column(String, index=True)
     strategy_family = Column(String, index=True, nullable=False)
     symbol = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class EventDefinitionUniverseReportRecord(Base):
+    __tablename__ = "event_definition_universe_reports"
+
+    report_id = Column(String, primary_key=True)
+    task_id = Column(String, index=True)
+    signal_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    strategy_family = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1351,6 +1364,51 @@ class QuantRepository:
                 query = query.filter(EventDefinitionSensitivityReportRecord.symbol == symbol)
             records = query.order_by(EventDefinitionSensitivityReportRecord.created_at.desc()).limit(limit).all()
             return [_load(EventDefinitionSensitivityReport, record.payload) for record in records]
+
+    def save_event_definition_universe_report(
+        self,
+        report: EventDefinitionUniverseReport,
+    ) -> EventDefinitionUniverseReport:
+        with self._session() as session:
+            session.merge(
+                EventDefinitionUniverseReportRecord(
+                    report_id=report.report_id,
+                    task_id=report.task_id,
+                    signal_id=report.signal_id,
+                    thesis_id=report.thesis_id,
+                    strategy_family=report.strategy_family,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_event_definition_universe_report(
+        self,
+        report_id: str,
+    ) -> Optional[EventDefinitionUniverseReport]:
+        record = self._get(EventDefinitionUniverseReportRecord, report_id)
+        return None if record is None else _load(EventDefinitionUniverseReport, record.payload)
+
+    def query_event_definition_universe_reports(
+        self,
+        task_id: Optional[str] = None,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[EventDefinitionUniverseReport]:
+        with self._session() as session:
+            query = session.query(EventDefinitionUniverseReportRecord)
+            if task_id is not None:
+                query = query.filter(EventDefinitionUniverseReportRecord.task_id == task_id)
+            if thesis_id is not None:
+                query = query.filter(EventDefinitionUniverseReportRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(EventDefinitionUniverseReportRecord.signal_id == signal_id)
+            if strategy_family is not None:
+                query = query.filter(EventDefinitionUniverseReportRecord.strategy_family == strategy_family)
+            records = query.order_by(EventDefinitionUniverseReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(EventDefinitionUniverseReport, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:

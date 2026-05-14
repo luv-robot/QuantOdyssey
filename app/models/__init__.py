@@ -12,6 +12,8 @@ from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStat
 from app.models.harness import (
     EventDefinitionSensitivityReport,
     EventDefinitionSensitivityTrial,
+    EventDefinitionUniverseCell,
+    EventDefinitionUniverseReport,
     ResearchFinding,
     ResearchFindingSeverity,
     ResearchHarnessCycle,
@@ -131,6 +133,8 @@ __all__ = [
     "ExperimentQueueStatus",
     "EventDefinitionSensitivityReport",
     "EventDefinitionSensitivityTrial",
+    "EventDefinitionUniverseCell",
+    "EventDefinitionUniverseReport",
     "FailureDiagnosis",
     "MarketSignal",
     "ModelResponseLog",

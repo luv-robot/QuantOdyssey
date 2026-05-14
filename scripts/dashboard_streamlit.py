@@ -35,6 +35,7 @@ KEY_TABLES = [
     "research_tasks",
     "research_harness_cycles",
     "event_definition_sensitivity_reports",
+    "event_definition_universe_reports",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -245,6 +246,13 @@ def render_research_run_detail(engine) -> None:
         "thesis_id",
         thesis["thesis_id"],
         "Event Definition Sensitivity Reports",
+    )
+    _render_related_payloads(
+        engine,
+        "event_definition_universe_reports",
+        "thesis_id",
+        thesis["thesis_id"],
+        "Event Definition Universe Reports",
     )
 
     strategies = _records_where_payload_field(
