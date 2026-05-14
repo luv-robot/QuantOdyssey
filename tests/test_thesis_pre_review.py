@@ -117,6 +117,41 @@ def test_event_episode_records_validation_scope() -> None:
     assert event.validation_data_sufficiency_level == DataSufficiencyLevel.L1_FUNDING_OI
 
 
+def test_event_episode_marks_proxy_open_interest_as_missing_evidence() -> None:
+    thesis = ResearchThesis(
+        thesis_id="thesis_event_proxy_oi",
+        title="Funding crowding fade short",
+        status=ThesisStatus.DRAFT,
+        market_observation="Positive funding and high OI show crowded longs.",
+        hypothesis="Crowded longs may exit after failed breakout.",
+        trade_logic="First test data level = L1 OHLCV + funding + OI. Test short side after 3 bars fail above local high.",
+        expected_regimes=["normal"],
+        invalidation_conditions=["breakout acceptance"],
+    )
+    signal = MarketSignal(
+        signal_id="signal_event_proxy_oi",
+        created_at=datetime.utcnow(),
+        exchange="binance",
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        signal_type=SignalType.FUNDING_OI_EXTREME,
+        rank_score=42,
+        features={
+            "funding_percentile_30d": 90,
+            "open_interest_percentile_30d": 84,
+            "open_interest_source": "volume_proxy",
+        },
+        hypothesis="funding crowding",
+        data_sources=["ohlcv", "funding"],
+    )
+    pre_review = build_thesis_pre_review(thesis)
+    design = build_research_design_draft(thesis, pre_review)
+    event = build_event_episode(thesis, signal, design)
+
+    assert "historical_open_interest" in event.missing_evidence
+    assert event.validation_data_sufficiency_level == DataSufficiencyLevel.L0_OHLCV_ONLY
+
+
 def test_repository_persists_pre_review_and_design() -> None:
     repository = QuantRepository()
     thesis = ResearchThesis(

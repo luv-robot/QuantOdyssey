@@ -156,6 +156,12 @@ def build_event_episode(
 ) -> EventEpisode:
     text = _thesis_text(thesis)
     direction = "short" if any(term in text for term in ["做空", "short", "crowded longs"]) else "long_or_mixed"
+    missing_evidence = _event_missing_evidence(signal, design)
+    validation_level = (
+        DataSufficiencyLevel.L0_OHLCV_ONLY
+        if "historical_open_interest" in missing_evidence
+        else design.validation_data_sufficiency_level
+    )
     return EventEpisode(
         event_id=f"event_{thesis.thesis_id}_{signal.signal_id}_{uuid4().hex[:8]}",
         thesis_id=thesis.thesis_id,
@@ -169,10 +175,10 @@ def build_event_episode(
         setup_window_bars=_setup_window_bars(signal.timeframe),
         trigger_window_bars=_trigger_window_bars(text),
         data_sufficiency_level=design.data_sufficiency_level,
-        validation_data_sufficiency_level=design.validation_data_sufficiency_level,
+        validation_data_sufficiency_level=validation_level,
         trigger_definition=design.event_definition_draft,
         features=dict(signal.features),
-        missing_evidence=design.missing_evidence,
+        missing_evidence=missing_evidence,
     )
 
 
@@ -187,6 +193,13 @@ def _thesis_text(thesis: ResearchThesis) -> str:
         " ".join(thesis.constraints),
     ]
     return " ".join(parts).lower()
+
+
+def _event_missing_evidence(signal: MarketSignal, design: ResearchDesignDraft) -> list[str]:
+    missing = list(design.missing_evidence)
+    if signal.features.get("open_interest_source") == "volume_proxy":
+        missing.append("historical_open_interest")
+    return sorted(set(missing))
 
 
 def _missing_structure(thesis: ResearchThesis) -> list[str]:
