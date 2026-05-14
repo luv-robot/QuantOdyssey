@@ -43,7 +43,14 @@ from app.models.portfolio_risk import (
     PortfolioRiskSeverity,
 )
 from app.models.regime import MarketRegimeSnapshot
-from app.models.review import ReviewCase, ReviewResult
+from app.models.review import (
+    ResearchMaturityScore,
+    ReviewCase,
+    ReviewClaim,
+    ReviewQuestion,
+    ReviewResult,
+    ReviewSession,
+)
 from app.models.research_asset import ResearchAssetIndexEntry
 from app.models.resource_control import ResourceBudgetReport
 from app.models.robustness import RobustnessReport
@@ -142,8 +149,12 @@ __all__ = [
     "PreReviewQuestion",
     "PreReviewQuestionCategory",
     "PreReviewStatus",
+    "ResearchMaturityScore",
     "ReviewCase",
+    "ReviewClaim",
+    "ReviewQuestion",
     "ReviewResult",
+    "ReviewSession",
     "RobustnessReport",
     "RealBacktestValidationSuiteReport",
     "ResearchDesignDraft",

@@ -41,6 +41,7 @@ from app.models import (
     ResearchThesis,
     ResourceBudgetReport,
     ReviewCase,
+    ReviewSession,
     RealBacktestValidationSuiteReport,
     RobustnessReport,
     RiskAuditResult,
@@ -265,6 +266,17 @@ class ReviewRecord(Base):
     strategy_id = Column(String, index=True, nullable=False)
     signal_id = Column(String, index=True, nullable=False)
     result = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ReviewSessionRecord(Base):
+    __tablename__ = "review_sessions"
+
+    session_id = Column(String, primary_key=True)
+    thesis_id = Column(String, index=True, nullable=False)
+    signal_id = Column(String, index=True, nullable=False)
+    strategy_id = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1048,6 +1060,41 @@ class QuantRepository:
             if result is not None:
                 query = query.filter(ReviewRecord.result == result)
             return [_load(ReviewCase, record.payload) for record in query.all()]
+
+    def save_review_session(self, session_model: ReviewSession) -> ReviewSession:
+        with self._session() as session:
+            session.merge(
+                ReviewSessionRecord(
+                    session_id=session_model.session_id,
+                    thesis_id=session_model.thesis_id,
+                    signal_id=session_model.signal_id,
+                    strategy_id=session_model.strategy_id,
+                    payload=_dump(session_model),
+                )
+            )
+        return session_model
+
+    def get_review_session(self, session_id: str) -> Optional[ReviewSession]:
+        record = self._get(ReviewSessionRecord, session_id)
+        return None if record is None else _load(ReviewSession, record.payload)
+
+    def query_review_sessions(
+        self,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ReviewSession]:
+        with self._session() as session:
+            query = session.query(ReviewSessionRecord)
+            if thesis_id is not None:
+                query = query.filter(ReviewSessionRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(ReviewSessionRecord.signal_id == signal_id)
+            if strategy_id is not None:
+                query = query.filter(ReviewSessionRecord.strategy_id == strategy_id)
+            records = query.order_by(ReviewSessionRecord.created_at.desc()).limit(limit).all()
+        return [_load(ReviewSession, record.payload) for record in records]
 
     def save_negative_result_case(self, case: NegativeResultCase) -> NegativeResultCase:
         with self._session() as session:
