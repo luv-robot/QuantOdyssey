@@ -159,13 +159,13 @@ def _funding_crowding_event_baselines(
     timeframe: str,
 ) -> list[BaselineResult]:
     horizon_bars = _bars_for_duration(timeframe, hours=4)
+    features = _precompute_event_features(candles, funding_rates, open_interest_points)
     return [
         _simulate_event_baseline(
             "funding_extreme_only_event",
             "Short fixed-horizon entries whenever funding is in its rolling top decile.",
             candles,
-            funding_rates,
-            open_interest_points,
+            features,
             horizon_bars=horizon_bars,
             side="short",
             require_funding=True,
@@ -176,8 +176,7 @@ def _funding_crowding_event_baselines(
             "funding_plus_oi_event",
             "Short fixed-horizon entries on funding extreme plus elevated participation/OI.",
             candles,
-            funding_rates,
-            open_interest_points,
+            features,
             horizon_bars=horizon_bars,
             side="short",
             require_funding=True,
@@ -188,8 +187,7 @@ def _funding_crowding_event_baselines(
             "simple_failed_breakout_event",
             "Short fixed-horizon entries after failed breakout without funding/OI filters.",
             candles,
-            funding_rates,
-            open_interest_points,
+            features,
             horizon_bars=horizon_bars,
             side="short",
             require_funding=False,
@@ -200,8 +198,7 @@ def _funding_crowding_event_baselines(
             "opposite_direction_event",
             "Long fixed-horizon entries with the crowded side after the full event setup.",
             candles,
-            funding_rates,
-            open_interest_points,
+            features,
             horizon_bars=horizon_bars,
             side="long",
             require_funding=True,
@@ -291,8 +288,7 @@ def _simulate_event_baseline(
     name: str,
     description: str,
     candles: list[OhlcvCandle],
-    funding_rates: list[FundingRatePoint],
-    open_interest_points: list[OpenInterestPoint] | None,
+    features_by_index: list[dict[str, float | bool]],
     *,
     horizon_bars: int,
     side: str,
@@ -304,7 +300,7 @@ def _simulate_event_baseline(
     returns: list[float] = []
     index = max(64, _bars_for_duration(candles[0].interval, hours=24))
     while index + horizon_bars < len(candles):
-        features = _event_features_at(candles, funding_rates, open_interest_points, index)
+        features = features_by_index[index]
         if _baseline_condition(
             features,
             require_funding=require_funding,
@@ -321,36 +317,51 @@ def _simulate_event_baseline(
     return _baseline_result_from_returns(name, description, returns)
 
 
-def _event_features_at(
+def _precompute_event_features(
     candles: list[OhlcvCandle],
     funding_rates: list[FundingRatePoint],
     open_interest_points: list[OpenInterestPoint] | None,
-    index: int,
-) -> dict[str, float | bool]:
-    candle = candles[index]
-    prior_funding = [point.funding_rate for point in funding_rates if point.funding_time <= candle.open_time]
-    funding_percentile = _latest_percentile(prior_funding[-90:], prior_funding[-1]) if prior_funding else 50.0
-    prior_oi = (
-        [point.open_interest for point in open_interest_points if point.timestamp <= candle.open_time]
-        if open_interest_points
-        else []
-    )
-    oi_percentile = (
-        _latest_percentile(prior_oi[-90:], prior_oi[-1])
-        if prior_oi
-        else _latest_percentile([item.volume for item in candles[max(0, index - 90) : index + 1]], candle.volume)
-    )
-    range_high = max(item.high for item in candles[index - 51 : index - 3])
-    recent_high_3 = max(item.high for item in candles[index - 2 : index + 1])
-    failed_breakout = recent_high_3 > range_high and candle.close < range_high
-    bars_24h = _bars_for_duration(candle.interval, hours=24)
-    price_change_24h = candle.close / candles[max(0, index - bars_24h)].close - 1
-    return {
-        "funding_percentile": funding_percentile,
-        "oi_percentile": oi_percentile,
-        "failed_breakout": failed_breakout,
-        "price_change_24h": price_change_24h,
-    }
+) -> list[dict[str, float | bool]]:
+    features = []
+    funding_index = 0
+    oi_index = 0
+    funding_window: list[float] = []
+    oi_window: list[float] = []
+    bars_24h = _bars_for_duration(candles[0].interval, hours=24)
+    for index, candle in enumerate(candles):
+        while funding_index < len(funding_rates) and funding_rates[funding_index].funding_time <= candle.open_time:
+            funding_window.append(funding_rates[funding_index].funding_rate)
+            funding_index += 1
+        if open_interest_points:
+            while oi_index < len(open_interest_points) and open_interest_points[oi_index].timestamp <= candle.open_time:
+                oi_window.append(open_interest_points[oi_index].open_interest)
+                oi_index += 1
+        funding_percentile = (
+            _latest_percentile(funding_window[-90:], funding_window[-1])
+            if funding_window
+            else 50.0
+        )
+        oi_percentile = (
+            _latest_percentile(oi_window[-90:], oi_window[-1])
+            if oi_window
+            else _latest_percentile([item.volume for item in candles[max(0, index - 90) : index + 1]], candle.volume)
+        )
+        if index >= 51:
+            range_high = max(item.high for item in candles[index - 51 : index - 3])
+            recent_high_3 = max(item.high for item in candles[index - 2 : index + 1])
+            failed_breakout = recent_high_3 > range_high and candle.close < range_high
+        else:
+            failed_breakout = False
+        price_change_24h = candle.close / candles[max(0, index - bars_24h)].close - 1
+        features.append(
+            {
+                "funding_percentile": funding_percentile,
+                "oi_percentile": oi_percentile,
+                "failed_breakout": failed_breakout,
+                "price_change_24h": price_change_24h,
+            }
+        )
+    return features
 
 
 def _baseline_condition(
