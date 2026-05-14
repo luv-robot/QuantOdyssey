@@ -9,7 +9,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.models import OhlcvCandle  # noqa: E402
+from app.models import FundingRatePoint, OhlcvCandle  # noqa: E402
 from app.services.market_data import (  # noqa: E402
     BinanceMarketDataClient,
     build_market_signal_from_dataset,
@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--min-rank", type=int, default=70)
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL", "sqlite+pysqlite:///market_data.sqlite3"))
     parser.add_argument("--skip-live-aux", action="store_true")
+    parser.add_argument("--funding-file", default=None)
     args = parser.parse_args()
 
     candles = load_freqtrade_ohlcv(Path(args.data_file), args.symbol, args.interval)
@@ -40,12 +41,21 @@ def main() -> None:
     funding_rates = []
     open_interest = None
     orderbook = None
+    if args.funding_file:
+        funding_rates = load_freqtrade_funding_rates(Path(args.funding_file), args.symbol)
     if not args.skip_live_aux:
-        funding_rates = client.fetch_funding_rate(args.symbol)
+        if not funding_rates:
+            funding_rates = client.fetch_funding_rate(args.symbol)
         open_interest = client.fetch_open_interest(args.symbol)
         orderbook = client.fetch_orderbook(args.symbol)
 
-    quality = quality_check_market_dataset(dataset_prefix, cleaned, orderbook=orderbook)
+    quality = quality_check_market_dataset(
+        dataset_prefix,
+        cleaned,
+        orderbook=orderbook,
+        funding_rates=funding_rates if args.funding_file else None,
+        open_interest_points=[open_interest] if open_interest is not None else None,
+    )
     repository = QuantRepository(args.database_url)
     repository.save_ohlcv(f"{dataset_prefix}:ohlcv", args.symbol, cleaned)
     repository.save_data_quality_report(quality)
@@ -107,6 +117,20 @@ def load_freqtrade_ohlcv(path: Path, symbol: str, interval: str) -> list[OhlcvCa
     return [_row_to_candle(row, symbol, interval) for row in frame.to_dict("records")]
 
 
+def load_freqtrade_funding_rates(path: Path, symbol: str) -> list[FundingRatePoint]:
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise SystemExit("pandas is required to import Freqtrade feather data.") from exc
+
+    frame = pd.read_feather(path)
+    required = {"date", "open"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise SystemExit(f"Freqtrade funding file is missing columns: {sorted(missing)}")
+    return [_row_to_funding_rate(row, symbol) for row in frame.to_dict("records")]
+
+
 def _row_to_candle(row: dict[str, Any], symbol: str, interval: str) -> OhlcvCandle:
     open_time = row["date"].to_pydatetime()
     close_time = open_time + _interval_delta(interval)
@@ -136,6 +160,21 @@ def _row_to_candle(row: dict[str, Any], symbol: str, interval: str) -> OhlcvCand
         quote_volume=quote_volume,
         trade_count=trade_count,
         raw=raw,
+    )
+
+
+def _row_to_funding_rate(row: dict[str, Any], symbol: str) -> FundingRatePoint:
+    funding_time = row["date"].to_pydatetime()
+    return FundingRatePoint(
+        symbol=symbol.upper(),
+        funding_time=funding_time,
+        funding_rate=float(row["open"]),
+        mark_price=None,
+        raw={
+            "date": funding_time.isoformat(),
+            "fundingRate": float(row["open"]),
+            "source": "freqtrade_funding_rate_feather",
+        },
     )
 
 

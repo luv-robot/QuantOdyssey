@@ -33,10 +33,13 @@ class BinanceMarketDataClient:
         symbol: str,
         interval: str = "5m",
         limit: int = 120,
+        trading_mode: str = "spot",
     ) -> list[OhlcvCandle]:
+        base_url = self.futures_base_url if trading_mode == "futures" else self.spot_base_url
+        path = "/fapi/v1/klines" if trading_mode == "futures" else "/api/v3/klines"
         payload = self._get(
-            self.spot_base_url,
-            "/api/v3/klines",
+            base_url,
+            path,
             {"symbol": _api_symbol(symbol), "interval": interval, "limit": limit},
         )
         return [_parse_kline(symbol, interval, row) for row in payload]
@@ -57,10 +60,30 @@ class BinanceMarketDataClient:
         )
         return _parse_open_interest(symbol, payload)
 
-    def fetch_orderbook(self, symbol: str, limit: int = 100) -> OrderBookSnapshot:
+    def fetch_open_interest_history(
+        self,
+        symbol: str,
+        period: str = "5m",
+        limit: int = 500,
+    ) -> list[OpenInterestPoint]:
         payload = self._get(
-            self.spot_base_url,
-            "/api/v3/depth",
+            self.futures_base_url,
+            "/futures/data/openInterestHist",
+            {"symbol": _api_symbol(symbol), "period": period, "limit": limit},
+        )
+        return [_parse_open_interest_history(symbol, row) for row in payload]
+
+    def fetch_orderbook(
+        self,
+        symbol: str,
+        limit: int = 100,
+        trading_mode: str = "spot",
+    ) -> OrderBookSnapshot:
+        base_url = self.futures_base_url if trading_mode == "futures" else self.spot_base_url
+        path = "/fapi/v1/depth" if trading_mode == "futures" else "/api/v3/depth"
+        payload = self._get(
+            base_url,
+            path,
             {"symbol": _api_symbol(symbol), "limit": limit},
         )
         return _parse_orderbook(symbol, payload)
@@ -115,6 +138,15 @@ def _parse_open_interest(symbol: str, row: dict[str, Any]) -> OpenInterestPoint:
         symbol=symbol.upper(),
         timestamp=_dt_from_ms(row["time"]),
         open_interest=float(row["openInterest"]),
+        raw=row,
+    )
+
+
+def _parse_open_interest_history(symbol: str, row: dict[str, Any]) -> OpenInterestPoint:
+    return OpenInterestPoint(
+        symbol=symbol.upper(),
+        timestamp=_dt_from_ms(row["timestamp"]),
+        open_interest=float(row["sumOpenInterest"]),
         raw=row,
     )
 

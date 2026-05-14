@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from scripts.import_freqtrade_market_data import _row_to_candle
+from scripts.import_freqtrade_market_data import _row_to_candle, _row_to_funding_rate
 
 
 class FakeTimestamp:
@@ -30,3 +30,21 @@ def test_row_to_candle_maps_freqtrade_ohlcv_without_optional_columns() -> None:
     assert candle.quote_volume == 210.0
     assert candle.trade_count == 0
     assert candle.close_time.minute == 5
+
+
+def test_row_to_funding_rate_maps_freqtrade_funding_file_shape() -> None:
+    point = _row_to_funding_rate(
+        {
+            "date": FakeTimestamp(datetime(2026, 5, 10, tzinfo=timezone.utc)),
+            "open": 0.000123,
+            "high": 0.0,
+            "low": 0.0,
+            "close": 0.0,
+            "volume": 0.0,
+        },
+        "BTC/USDT:USDT",
+    )
+
+    assert point.symbol == "BTC/USDT:USDT"
+    assert point.funding_rate == 0.000123
+    assert point.raw["source"] == "freqtrade_funding_rate_feather"

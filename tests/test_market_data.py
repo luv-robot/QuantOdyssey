@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from app.flows import run_real_data_scout_flow
 from app.models import DataQualityFlag
 from app.services.market_data import BinanceMarketDataClient, clean_ohlcv, quality_check_market_dataset
@@ -44,6 +46,16 @@ def fake_binance_transport(url: str):
     if "/fapi/v1/openInterest" in url:
         return {"symbol": "BTCUSDT", "openInterest": "12345.67", "time": 1710000000000}
 
+    if "/futures/data/openInterestHist" in url:
+        return [
+            {
+                "symbol": "BTCUSDT",
+                "sumOpenInterest": "11111.1",
+                "sumOpenInterestValue": "22222.2",
+                "timestamp": 1710000000000,
+            }
+        ]
+
     if "/api/v3/depth" in url:
         return {
             "lastUpdateId": 123,
@@ -60,12 +72,14 @@ def test_binance_client_parses_market_data() -> None:
     candles = client.fetch_ohlcv("BTC/USDT")
     funding = client.fetch_funding_rate("BTC/USDT")
     open_interest = client.fetch_open_interest("BTC/USDT")
+    open_interest_history = client.fetch_open_interest_history("BTC/USDT")
     orderbook = client.fetch_orderbook("BTC/USDT")
 
     assert len(candles) == 60
     assert candles[-1].volume == 500
     assert funding[-1].funding_rate == 0.0001
     assert open_interest.open_interest == 12345.67
+    assert open_interest_history[-1].open_interest == 11111.1
     assert orderbook.bids[0].price == 159.9
 
 
@@ -77,6 +91,25 @@ def test_quality_check_flags_missing_data() -> None:
 
     assert report.is_usable is False
     assert DataQualityFlag.MISSING_DATA in report.flags
+
+
+def test_quality_check_flags_stale_funding_and_open_interest() -> None:
+    client = BinanceMarketDataClient(transport=fake_binance_transport)
+    candles = client.fetch_ohlcv("BTC/USDT")
+    funding = client.fetch_funding_rate("BTC/USDT")
+    open_interest_history = client.fetch_open_interest_history("BTC/USDT")
+
+    report = quality_check_market_dataset(
+        "dataset",
+        candles,
+        funding_rates=funding,
+        open_interest_points=open_interest_history,
+        now=datetime(2024, 3, 15),
+        stale_after=timedelta(days=1),
+    )
+
+    assert report.is_usable is False
+    assert DataQualityFlag.STALE_DATA in report.flags
 
 
 def test_clean_ohlcv_removes_extreme_outlier() -> None:
