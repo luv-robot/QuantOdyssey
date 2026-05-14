@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -123,6 +123,9 @@ def _row_to_open_interest(row: dict[str, Any], symbol: str) -> OpenInterestPoint
         timestamp = timestamp.to_pydatetime()
     elif isinstance(timestamp, (int, float)):
         timestamp = _timestamp_from_number(timestamp)
+    elif isinstance(timestamp, str):
+        timestamp = _datetime_from_string(timestamp)
+    timestamp = _naive_utc(timestamp)
     value = row.get("open_interest", row.get("sumOpenInterest", row.get("open", row.get("close"))))
     if value is None:
         raise ValueError("Open-interest row is missing open_interest/sumOpenInterest/open/close value.")
@@ -135,10 +138,19 @@ def _row_to_open_interest(row: dict[str, Any], symbol: str) -> OpenInterestPoint
 
 
 def _timestamp_from_number(value: int | float):
-    from datetime import datetime
-
     divisor = 1000 if value > 10_000_000_000 else 1
     return datetime.utcfromtimestamp(value / divisor)
+
+
+def _datetime_from_string(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    return datetime.fromisoformat(normalized)
+
+
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _interval_delta(interval: str) -> timedelta:

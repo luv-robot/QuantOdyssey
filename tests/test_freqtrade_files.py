@@ -15,7 +15,7 @@ def test_load_open_interest_points_from_json(tmp_path) -> None:
             [
                 {
                     "symbol": "BTCUSDT",
-                    "timestamp": "2026-05-01T00:00:00",
+                    "timestamp": "2026-05-01T00:00:00+00:00",
                     "open_interest": 12345.6,
                 }
             ]
@@ -27,6 +27,7 @@ def test_load_open_interest_points_from_json(tmp_path) -> None:
 
     assert points[0].symbol == "BTC/USDT:USDT"
     assert points[0].timestamp == datetime(2026, 5, 1)
+    assert points[0].timestamp.tzinfo is None
     assert points[0].open_interest == 12345.6
 
 
