@@ -13,6 +13,7 @@ from app.services.market_data.freqtrade_files import (
 )
 from app.services.market_data.orderflow import build_orderflow_bars
 from app.services.market_data.orderflow_collector import collect_symbol_orderflow_once
+from app.services.market_data.orderflow_health import build_orderflow_health_report
 from app.services.market_data.signal_builder import build_market_signal_from_dataset
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "build_funding_crowding_fade_event",
     "build_market_signal_from_dataset",
     "build_orderflow_bars",
+    "build_orderflow_health_report",
     "collect_symbol_orderflow_once",
     "clean_ohlcv",
     "find_freqtrade_funding_file",

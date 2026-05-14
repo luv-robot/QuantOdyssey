@@ -23,6 +23,8 @@ def main() -> int:
     parser.add_argument("--max-candles", type=int, default=20000)
     parser.add_argument("--horizon-hours", type=int, default=2)
     parser.add_argument("--max-events-per-cell", type=int, default=100)
+    parser.add_argument("--orderflow-interval", default=os.getenv("ORDERFLOW_BAR_INTERVAL", "1m"))
+    parser.add_argument("--max-orderflow-bars", type=int, default=200000)
     parser.add_argument("--min-events-with-orderflow", type=int, default=30)
     parser.add_argument("--min-confirmation-rate", type=float, default=0.5)
     parser.add_argument("--max-conflict-rate", type=float, default=0.35)
@@ -43,7 +45,13 @@ def main() -> int:
     symbols = args.symbol or universe_report.symbols or ["BTC/USDT:USDT"]
     timeframes = args.timeframe or universe_report.timeframes or ["1h"]
     candles_by_cell = _load_candles(args, symbols, timeframes)
-    orderflow_by_cell = _load_orderflow(repository, symbols, timeframes)
+    orderflow_by_cell = _load_orderflow(
+        repository,
+        symbols,
+        timeframes,
+        args.orderflow_interval,
+        args.max_orderflow_bars,
+    )
     report = run_failed_breakout_orderflow_acceptance_validation(
         universe_report=universe_report,
         candles_by_cell=candles_by_cell,
@@ -85,13 +93,20 @@ def _load_candles(args: argparse.Namespace, symbols: list[str], timeframes: list
     return candles_by_cell
 
 
-def _load_orderflow(repository: QuantRepository, symbols: list[str], timeframes: list[str]):
+def _load_orderflow(
+    repository: QuantRepository,
+    symbols: list[str],
+    timeframes: list[str],
+    orderflow_interval: str,
+    max_orderflow_bars: int,
+):
     orderflow_by_cell = {}
     for symbol in symbols:
-        dataset_ids = repository.query_market_data_dataset_ids("orderflow_bar", symbol=symbol, limit=20)
-        bars = []
-        for dataset_id in dataset_ids:
-            bars.extend(repository.get_orderflow_bars(dataset_id))
+        bars = repository.query_orderflow_bars(
+            symbol,
+            interval=orderflow_interval,
+            limit=max_orderflow_bars,
+        )
         for timeframe in timeframes:
             orderflow_by_cell[(symbol, timeframe)] = sorted(bars, key=lambda item: item.open_time)
     return orderflow_by_cell

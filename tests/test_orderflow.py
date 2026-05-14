@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 
 from app.models import (
@@ -8,7 +9,11 @@ from app.models import (
     StrategyFamily,
 )
 from app.services.harness import run_failed_breakout_orderflow_acceptance_validation
-from app.services.market_data import build_orderflow_bars, collect_symbol_orderflow_once
+from app.services.market_data import (
+    build_orderflow_bars,
+    build_orderflow_health_report,
+    collect_symbol_orderflow_once,
+)
 from app.storage import QuantRepository
 
 
@@ -41,6 +46,9 @@ def test_repository_persists_aggregate_trades_and_orderflow_bars() -> None:
     assert repository.get_aggregate_trades("agg_dataset") == trades
     assert repository.get_orderflow_bars("of_dataset") == bars
     assert repository.query_market_data_dataset_ids("orderflow_bar", symbol="BTC/USDT:USDT") == ["of_dataset"]
+    assert repository.query_orderflow_bars("BTC/USDT:USDT", interval="1m") == bars
+    assert repository.get_latest_orderflow_bar("BTC/USDT:USDT", interval="1m") == bars[-1]
+    assert repository.count_orderflow_bars("BTC/USDT:USDT", interval="1m") == len(bars)
 
 
 def test_collect_symbol_orderflow_once_uses_incremental_state() -> None:
@@ -87,6 +95,36 @@ def test_collect_symbol_orderflow_once_uses_incremental_state() -> None:
 
     assert second_result["status"] == "no_new_trades"
     assert client.calls[-1] == 13
+
+
+def test_orderflow_health_report_flags_stale_symbols(tmp_path) -> None:
+    repository = QuantRepository()
+    fresh_trades = [_trade(1, buyer_is_maker=False, timestamp=datetime(2024, 1, 1, 0, 9, 10))]
+    stale_trades = [_trade(2, buyer_is_maker=True, timestamp=datetime(2024, 1, 1, 0, 0, 10))]
+    repository.save_orderflow_bars("fresh_dataset", "BTC/USDT:USDT", build_orderflow_bars(fresh_trades))
+    repository.save_orderflow_bars("stale_dataset", "ETH/USDT:USDT", build_orderflow_bars(stale_trades))
+    state_path = tmp_path / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "futures:BTC/USDT:USDT": {"last_aggregate_trade_id": 1, "updated_at": "2024-01-01T00:10:00"},
+                "futures:ETH/USDT:USDT": {"last_aggregate_trade_id": 2, "updated_at": "2024-01-01T00:01:00"},
+            }
+        )
+    )
+
+    report = build_orderflow_health_report(
+        repository,
+        symbols=["BTC/USDT:USDT", "ETH/USDT:USDT"],
+        max_staleness_seconds=300,
+        state_path=str(state_path),
+        now=datetime(2024, 1, 1, 0, 10, 0),
+    )
+
+    assert report["status"] == "fail"
+    assert report["state_loaded"] is True
+    assert report["symbols"][0]["status"] == "ok"
+    assert report["symbols"][1]["status"] == "fail"
 
 
 def test_failed_breakout_orderflow_acceptance_report_uses_taker_flow() -> None:

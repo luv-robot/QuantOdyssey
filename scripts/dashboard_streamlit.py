@@ -20,6 +20,7 @@ from app.models import (  # noqa: E402
     ThesisStatus,
 )
 from app.services.operations import run_health_checks  # noqa: E402
+from app.services.market_data import build_orderflow_health_report  # noqa: E402
 from app.services.researcher import build_research_design_draft, build_thesis_pre_review  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
@@ -41,6 +42,7 @@ KEY_TABLES = [
     "strategy_family_walk_forward_reports",
     "strategy_family_monte_carlo_reports",
     "strategy_family_orderflow_acceptance_reports",
+    "orderflow_bars",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -514,6 +516,63 @@ def _render_related_payloads(engine, table_name: str, field: str, value: str, ti
         st.json(record)
 
 
+def render_orderflow_health(engine, database_url: str) -> None:
+    st.subheader("Orderflow Collector Health")
+    symbols = _env_list("ORDERFLOW_HEALTH_SYMBOLS") or _env_list("ORDERFLOW_SYMBOLS") or [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "SOL/USDT:USDT",
+    ]
+    report = build_orderflow_health_report(
+        QuantRepository(database_url),
+        symbols=symbols,
+        interval=os.getenv("ORDERFLOW_BAR_INTERVAL", "1m"),
+        trading_mode=os.getenv("ORDERFLOW_TRADING_MODE", "futures"),
+        max_staleness_seconds=int(os.getenv("ORDERFLOW_MAX_STALENESS_SECONDS", "600")),
+        state_path=os.getenv("ORDERFLOW_STATE_PATH", "/app/logs/orderflow_collector_state.json"),
+    )
+    if report["status"] == "ok":
+        st.success("Orderflow collector is fresh.")
+    elif report["status"] == "warn":
+        st.warning("Orderflow collector has warnings.")
+    else:
+        st.error("Orderflow collector is stale or missing data.")
+    st.caption(f"Generated at: `{report['generated_at']}`")
+
+    for item in report["symbols"]:
+        columns = st.columns([1.2, 0.8, 0.8, 0.8, 2])
+        columns[0].write(f"**{item['symbol']}**")
+        columns[1].write(item["status"].upper())
+        columns[2].metric("Lag", "n/a" if item["lag_seconds"] is None else f"{item['lag_seconds']}s")
+        columns[3].metric("Recent bars", item["recent_bar_count"])
+        columns[4].caption(item["message"])
+        with st.expander(f"{item['symbol']} collector details"):
+            st.json(item)
+
+    inspector = inspect(engine)
+    if "orderflow_bars" not in inspector.get_table_names():
+        st.info("No structured `orderflow_bars` table found yet.")
+        return
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                select symbol, interval, open_time, close_time, created_at
+                from orderflow_bars
+                order by created_at desc
+                limit 20
+                """
+            )
+        ).fetchall()
+    st.write("### Recent Orderflow Rows")
+    st.dataframe([dict(row._mapping) for row in rows], use_container_width=True)
+
+
+def _env_list(name: str) -> list[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def main() -> None:
     st.set_page_config(page_title="Quant Odyssey", layout="wide")
     st.title("Quant Odyssey Research Console")
@@ -558,6 +617,7 @@ def main() -> None:
             "Risk Alerts",
             "Resource Budgets",
             "Human Approval",
+            "Orderflow Health",
             "System Status",
         ]
     )
@@ -606,6 +666,9 @@ def main() -> None:
                 st.info(f"No `{table}` records found yet.")
             for payload in payloads:
                 st.json(payload)
+
+    with tabs[-2]:
+        render_orderflow_health(engine, database_url)
 
     with tabs[-1]:
         st.subheader("System Status")

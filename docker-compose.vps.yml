@@ -92,6 +92,36 @@ services:
       postgres:
         condition: service_healthy
 
+  orderflow-validation-scheduler:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: python scripts/prefect_orderflow_validation_flow.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      POSTGRES_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      PREFECT_API_URL: http://prefect:4200/api
+      ORDERFLOW_SYMBOLS: "${ORDERFLOW_SYMBOLS:-BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT}"
+      ORDERFLOW_BAR_INTERVAL: "${ORDERFLOW_BAR_INTERVAL:-1m}"
+      ORDERFLOW_TRADING_MODE: "${ORDERFLOW_TRADING_MODE:-futures}"
+      ORDERFLOW_MAX_STALENESS_SECONDS: "${ORDERFLOW_MAX_STALENESS_SECONDS:-600}"
+      ORDERFLOW_STATE_PATH: "${ORDERFLOW_STATE_PATH:-/app/logs/orderflow_collector_state.json}"
+      ORDERFLOW_VALIDATION_CRON: "${ORDERFLOW_VALIDATION_CRON:-15 */6 * * *}"
+      ORDERFLOW_VALIDATION_TIMEFRAMES: "${ORDERFLOW_VALIDATION_TIMEFRAMES:-1h}"
+      ORDERFLOW_VALIDATION_MIN_EVENTS_WITH_ORDERFLOW: "${ORDERFLOW_VALIDATION_MIN_EVENTS_WITH_ORDERFLOW:-30}"
+    volumes:
+      - ./configs:/app/configs:ro
+      - freqtrade_data:/app/freqtrade_user_data/data
+      - app_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect:
+        condition: service_started
+      orderflow-collector:
+        condition: service_started
+
   postgres:
     image: postgres:16
     restart: unless-stopped

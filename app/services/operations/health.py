@@ -12,6 +12,9 @@ from urllib.request import Request, urlopen
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.services.market_data import build_orderflow_health_report
+from app.storage import QuantRepository
+
 
 DEFAULT_TABLES = (
     "research_theses",
@@ -26,6 +29,7 @@ DEFAULT_TABLES = (
     "strategy_family_walk_forward_reports",
     "strategy_family_monte_carlo_reports",
     "strategy_family_orderflow_acceptance_reports",
+    "orderflow_bars",
     "strategy_registry",
     "backtests",
     "monte_carlo_backtests",
@@ -146,9 +150,43 @@ def _secret_check() -> HealthCheck:
     return HealthCheck("webhook_secret", "fail", "N8N_WEBHOOK_SECRET is not configured.")
 
 
+def _orderflow_collector_check(database_url: str | None) -> HealthCheck:
+    if not database_url:
+        return HealthCheck("orderflow_collector", "warn", "DATABASE_URL is not configured.")
+    symbols = _env_list("ORDERFLOW_HEALTH_SYMBOLS") or _env_list("ORDERFLOW_SYMBOLS") or [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "SOL/USDT:USDT",
+    ]
+    try:
+        report = build_orderflow_health_report(
+            QuantRepository(database_url),
+            symbols=symbols,
+            interval=os.getenv("ORDERFLOW_BAR_INTERVAL", "1m"),
+            trading_mode=os.getenv("ORDERFLOW_TRADING_MODE", "futures"),
+            max_staleness_seconds=int(os.getenv("ORDERFLOW_MAX_STALENESS_SECONDS", "600")),
+            state_path=os.getenv("ORDERFLOW_STATE_PATH", "/app/logs/orderflow_collector_state.json"),
+        )
+    except Exception as exc:
+        return HealthCheck(
+            "orderflow_collector",
+            "fail",
+            f"Orderflow collector check failed: {exc.__class__.__name__}",
+        )
+    stale = [item["symbol"] for item in report["symbols"] if item["status"] == "fail"]
+    if report["status"] == "ok":
+        message = "Orderflow collector data is fresh."
+    elif stale:
+        message = f"Orderflow stale or missing for: {', '.join(stale)}."
+    else:
+        message = "Orderflow collector has warnings."
+    return HealthCheck("orderflow_collector", report["status"], message, details=report)
+
+
 def run_health_checks() -> HealthReport:
     checks = [
         _check_database(os.getenv("DATABASE_URL")),
+        _orderflow_collector_check(os.getenv("DATABASE_URL")),
         _http_check("qdrant", os.getenv("QDRANT_URL"), {200}),
         _http_check("prefect", _normalize_api_url(os.getenv("PREFECT_API_URL")), {200, 307, 308}),
         _http_check("n8n", os.getenv("N8N_URL"), {200, 401}),
@@ -161,6 +199,11 @@ def run_health_checks() -> HealthReport:
     elif any(check.status == "warn" for check in checks):
         status = "warn"
     return HealthReport(status=status, generated_at=_now_iso(), checks=checks)
+
+
+def _env_list(name: str) -> list[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _normalize_api_url(url: str | None) -> str | None:

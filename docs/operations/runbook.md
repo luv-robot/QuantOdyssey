@@ -23,6 +23,7 @@ Check status:
 cd /home/codexboy/QuantOdyssey
 docker compose -f docker-compose.vps.yml ps orderflow-collector
 docker compose -f docker-compose.vps.yml logs --tail=20 orderflow-collector
+docker compose -f docker-compose.vps.yml exec -T app python scripts/check_orderflow_health.py
 ```
 
 Runtime knobs are read from `.env`:
@@ -32,6 +33,23 @@ ORDERFLOW_SYMBOLS=BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT
 ORDERFLOW_POLL_SECONDS=60
 ORDERFLOW_MAX_PAGES_PER_SYMBOL=5
 ```
+
+Backfill public Binance archive data:
+
+```bash
+cd /home/codexboy/QuantOdyssey
+docker compose -f docker-compose.vps.yml exec -T app \
+  python scripts/backfill_binance_agg_trades_archive.py \
+  --symbols BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT \
+  --start-date 2026-05-01 \
+  --end-date 2026-05-01
+```
+
+Archive backfill saves structured orderflow bars by default. Use `--save-raw`
+only for small windows because raw aggregate trades can grow quickly.
+
+Orderflow validation is scheduled by `orderflow-validation-scheduler`.
+It runs health checks and Failed Breakout orderflow acceptance validation every 6 hours by default.
 
 ## Backups
 

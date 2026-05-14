@@ -142,6 +142,19 @@ class MarketDataRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class OrderflowBarRecord(Base):
+    __tablename__ = "orderflow_bars"
+
+    record_id = Column(String, primary_key=True)
+    dataset_id = Column(String, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    interval = Column(String, index=True, nullable=False)
+    open_time = Column(DateTime, index=True, nullable=False)
+    close_time = Column(DateTime, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class DataQualityRecord(Base):
     __tablename__ = "data_quality_reports"
 
@@ -868,6 +881,7 @@ class QuantRepository:
     ) -> list[OrderflowBar]:
         payload = "[" + ",".join(_dump(bar) for bar in bars) + "]"
         self._save_market_data(dataset_id, "orderflow_bar", symbol, payload)
+        self._save_orderflow_bar_rows(dataset_id, symbol, bars)
         return bars
 
     def get_orderflow_bars(self, dataset_id: str) -> list[OrderflowBar]:
@@ -875,6 +889,53 @@ class QuantRepository:
         if record is None:
             return []
         return [OrderflowBar.model_validate(item) for item in json.loads(record.payload)]
+
+    def query_orderflow_bars(
+        self,
+        symbol: str,
+        interval: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 10000,
+    ) -> list[OrderflowBar]:
+        with self._session() as session:
+            query = session.query(OrderflowBarRecord).filter(OrderflowBarRecord.symbol == symbol.upper())
+            if interval is not None:
+                query = query.filter(OrderflowBarRecord.interval == interval)
+            if start_time is not None:
+                query = query.filter(OrderflowBarRecord.open_time >= start_time)
+            if end_time is not None:
+                query = query.filter(OrderflowBarRecord.open_time < end_time)
+            query = query.order_by(OrderflowBarRecord.open_time.asc(), OrderflowBarRecord.created_at.asc())
+            if limit > 0:
+                query = query.limit(limit)
+            records = query.all()
+            return [_load(OrderflowBar, record.payload) for record in records]
+
+    def get_latest_orderflow_bar(self, symbol: str, interval: Optional[str] = None) -> Optional[OrderflowBar]:
+        with self._session() as session:
+            query = session.query(OrderflowBarRecord).filter(OrderflowBarRecord.symbol == symbol.upper())
+            if interval is not None:
+                query = query.filter(OrderflowBarRecord.interval == interval)
+            record = query.order_by(
+                OrderflowBarRecord.open_time.desc(),
+                OrderflowBarRecord.created_at.desc(),
+            ).first()
+            return None if record is None else _load(OrderflowBar, record.payload)
+
+    def count_orderflow_bars(
+        self,
+        symbol: str,
+        interval: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+    ) -> int:
+        with self._session() as session:
+            query = session.query(OrderflowBarRecord).filter(OrderflowBarRecord.symbol == symbol.upper())
+            if interval is not None:
+                query = query.filter(OrderflowBarRecord.interval == interval)
+            if start_time is not None:
+                query = query.filter(OrderflowBarRecord.open_time >= start_time)
+            return int(query.count())
 
     def query_market_data_dataset_ids(
         self,
@@ -2100,3 +2161,18 @@ class QuantRepository:
                     payload=payload,
                 )
             )
+
+    def _save_orderflow_bar_rows(self, dataset_id: str, symbol: str, bars: list[OrderflowBar]) -> None:
+        with self._session() as session:
+            for bar in bars:
+                session.merge(
+                    OrderflowBarRecord(
+                        record_id=f"{dataset_id}:{bar.open_time.isoformat()}:{bar.close_time.isoformat()}",
+                        dataset_id=dataset_id,
+                        symbol=symbol.upper(),
+                        interval=bar.interval,
+                        open_time=bar.open_time,
+                        close_time=bar.close_time,
+                        payload=_dump(bar),
+                    )
+                )
