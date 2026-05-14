@@ -427,7 +427,7 @@ def _select_best_trial(
 ) -> EventDefinitionSensitivityTrial | None:
     candidates = [trial for trial in trials if trial.trade_count >= min_trade_count]
     if not candidates:
-        candidates = trials
+        candidates = [trial for trial in trials if trial.trade_count > 0]
     return max(candidates, key=lambda item: (item.beats_funding_only, item.total_return, item.profit_factor), default=None)
 
 
