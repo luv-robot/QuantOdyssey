@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, Type, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import Column, DateTime, String, Text, create_engine
+from sqlalchemy import Column, DateTime, String, Text, create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.models import (
@@ -620,7 +620,19 @@ class QuantRepository:
     def __init__(self, database_url: str = "sqlite+pysqlite:///:memory:") -> None:
         self.engine = create_engine(database_url)
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
-        Base.metadata.create_all(self.engine)
+        self._initialize_schema()
+
+    def _initialize_schema(self) -> None:
+        if self.engine.dialect.name != "postgresql":
+            Base.metadata.create_all(self.engine)
+            return
+
+        with self.engine.begin() as connection:
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+                {"namespace": 1481471037, "key": 1},
+            )
+            Base.metadata.create_all(connection)
 
     def save_signal(self, signal: MarketSignal) -> MarketSignal:
         with self._session() as session:
