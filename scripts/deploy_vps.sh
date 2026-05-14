@@ -32,4 +32,5 @@ rsync -az --delete \
 
 ssh "$USER@$HOST" "cd '$REMOTE_DIR' && test -f .env || cp .env.vps.example .env"
 ssh "$USER@$HOST" "cd '$REMOTE_DIR' && docker compose -f docker-compose.vps.yml up -d --build"
+ssh "$USER@$HOST" "cd '$REMOTE_DIR' && docker compose -f docker-compose.vps.yml up -d --force-recreate caddy"
 ssh "$USER@$HOST" "cd '$REMOTE_DIR' && docker compose -f docker-compose.vps.yml ps"
