@@ -24,7 +24,7 @@ def build_review_session(
     robustness: RobustnessReport,
     review_case: ReviewCase | None = None,
 ) -> ReviewSession:
-    maturity = _build_maturity_score(pre_review, research_design, backtest, baseline, robustness)
+    maturity = _build_maturity_score(pre_review, research_design, event_episode, backtest, baseline, robustness)
     return ReviewSession(
         session_id=f"review_session_{backtest.backtest_id}",
         thesis_id=research_design.thesis_id,
@@ -41,12 +41,12 @@ def build_review_session(
             "outperformed_best_baseline": baseline.outperformed_best_baseline,
             "robustness_score": robustness.robustness_score,
             "statistical_confidence_score": robustness.statistical_confidence_score,
-            "validation_data_sufficiency_level": research_design.validation_data_sufficiency_level.value,
+            "validation_data_sufficiency_level": event_episode.validation_data_sufficiency_level.value,
         },
         evidence_for=_evidence_for(backtest, baseline, robustness, review_case),
         evidence_against=_evidence_against(backtest, baseline, robustness),
         blind_spots=_blind_spots(research_design, event_episode, baseline),
-        ai_questions=_ai_questions(pre_review, research_design),
+        ai_questions=_ai_questions(pre_review, research_design, event_episode),
         next_experiments=_next_experiments(research_design, baseline, robustness),
         user_responses=[],
         maturity_score=maturity,
@@ -56,12 +56,13 @@ def build_review_session(
 def _build_maturity_score(
     pre_review: ThesisPreReview,
     research_design: ResearchDesignDraft,
+    event_episode: EventEpisode,
     backtest: BacktestReport,
     baseline: BaselineComparisonReport,
     robustness: RobustnessReport,
 ) -> ResearchMaturityScore:
     thesis_clarity = round((pre_review.completeness_score + pre_review.condition_clarity_score) / 2, 2)
-    data_sufficiency = 80 if research_design.validation_data_sufficiency_level == research_design.data_sufficiency_level else 55
+    data_sufficiency = 80 if event_episode.validation_data_sufficiency_level == research_design.data_sufficiency_level else 55
     sample_maturity = min(100, round(backtest.trades / 80 * 100, 2))
     baseline_advantage = 85 if baseline.outperformed_best_baseline else 35
     robustness_score = robustness.robustness_score
@@ -69,6 +70,7 @@ def _build_maturity_score(
     failure_understanding = 70 if review_case_like_findings(robustness.findings) else 45
     implementation_safety = 80
     overfit_risk = max(0, 100 - robustness.statistical_confidence_score)
+    missing_evidence = sorted(set(research_design.missing_evidence + event_episode.missing_evidence))
     components = [
         thesis_clarity,
         data_sufficiency,
@@ -82,8 +84,8 @@ def _build_maturity_score(
     ]
     overall = round(sum(components) / len(components), 2)
     blockers = []
-    if research_design.missing_evidence:
-        blockers.append("Missing future evidence: " + ", ".join(research_design.missing_evidence) + ".")
+    if missing_evidence:
+        blockers.append("Missing future evidence: " + ", ".join(missing_evidence) + ".")
     if not baseline.outperformed_best_baseline:
         blockers.append("Strategy has not outperformed the best matched baseline.")
     if backtest.trades < 80:
@@ -201,12 +203,13 @@ def _blind_spots(
     baseline: BaselineComparisonReport,
 ) -> list[ReviewClaim]:
     claims = []
-    if research_design.missing_evidence:
+    missing_evidence = sorted(set(research_design.missing_evidence + event_episode.missing_evidence))
+    if missing_evidence:
         claims.append(
             ReviewClaim(
                 claim_id="blind_spot_missing_evidence",
                 claim_type="data_sufficiency",
-                statement="Current validation does not include all evidence required by the full thesis.",
+                statement="Current validation does not include all evidence required by the full thesis or event.",
                 evidence_refs=[
                     f"design:{research_design.design_id}:missing_evidence",
                     f"event:{event_episode.event_id}:missing_evidence",
@@ -230,6 +233,7 @@ def _blind_spots(
 def _ai_questions(
     pre_review: ThesisPreReview,
     research_design: ResearchDesignDraft,
+    event_episode: EventEpisode,
 ) -> list[ReviewQuestion]:
     questions = [
         ReviewQuestion(
@@ -240,13 +244,17 @@ def _ai_questions(
         )
         for index, item in enumerate(pre_review.unresolved_questions, start=1)
     ]
-    if research_design.missing_evidence:
+    missing_evidence = sorted(set(research_design.missing_evidence + event_episode.missing_evidence))
+    if missing_evidence:
         questions.append(
             ReviewQuestion(
                 question_id="question_missing_evidence_priority",
                 question="Which missing evidence should be added first to reduce mechanism uncertainty?",
                 why_it_matters="The thesis may require data that the current validation did not include.",
-                evidence_refs=[f"design:{research_design.design_id}:missing_evidence"],
+                evidence_refs=[
+                    f"design:{research_design.design_id}:missing_evidence",
+                    f"event:{event_episode.event_id}:missing_evidence",
+                ],
             )
         )
     return questions

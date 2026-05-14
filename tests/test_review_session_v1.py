@@ -161,6 +161,38 @@ def test_build_review_session_generates_evidence_and_maturity_score() -> None:
     assert any("orderbook" in blocker for blocker in session.maturity_score.blockers)
 
 
+def test_review_session_uses_event_level_validation_scope() -> None:
+    design = sample_design().model_copy(
+        update={
+            "data_sufficiency_level": DataSufficiencyLevel.L1_FUNDING_OI,
+            "validation_data_sufficiency_level": DataSufficiencyLevel.L1_FUNDING_OI,
+            "missing_evidence": [],
+        }
+    )
+    event = sample_event().model_copy(
+        update={
+            "data_sufficiency_level": DataSufficiencyLevel.L1_FUNDING_OI,
+            "validation_data_sufficiency_level": DataSufficiencyLevel.L0_OHLCV_ONLY,
+            "missing_evidence": ["historical_open_interest"],
+        }
+    )
+
+    session = build_review_session(
+        sample_pre_review(),
+        design,
+        event,
+        sample_backtest(),
+        sample_baseline(),
+        sample_robustness(),
+        sample_review_case(),
+    )
+
+    assert session.scorecard["validation_data_sufficiency_level"] == DataSufficiencyLevel.L0_OHLCV_ONLY.value
+    assert session.maturity_score.data_sufficiency == 55
+    assert any("historical_open_interest" in blocker for blocker in session.maturity_score.blockers)
+    assert any(claim.claim_id == "blind_spot_missing_evidence" for claim in session.blind_spots)
+
+
 def test_repository_persists_review_sessions() -> None:
     repository = QuantRepository()
     session = build_review_session(
