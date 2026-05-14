@@ -157,6 +157,83 @@ def test_backtest_preflight_accepts_futures_data_for_short_strategy(tmp_path) ->
     assert preflight["data_checks"][0]["found_path"] == str(data_file)
 
 
+def test_backtest_preflight_requires_exact_futures_timeframe(tmp_path) -> None:
+    strategy_file = tmp_path / "ShortStrategy.py"
+    strategy_file.write_text(
+        "from freqtrade.strategy import IStrategy\n\nclass ShortStrategy(IStrategy):\n"
+        "    timeframe = '5m'\n"
+        "    can_short = True\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "futures.json"
+    config.write_text('{"trading_mode": "futures"}', encoding="utf-8")
+    data_file = tmp_path / "user_data" / "data" / "binance" / "futures" / "BTC_USDT_USDT-15m-futures.feather"
+    data_file.parent.mkdir(parents=True)
+    data_file.write_text("", encoding="utf-8")
+    manifest = StrategyManifest(
+        strategy_id="strategy_short",
+        signal_id="signal_001",
+        name="ShortStrategy",
+        file_path=str(strategy_file),
+        generated_at="2026-05-14T00:00:00",
+        timeframe="5m",
+        symbols=["BTC/USDT:USDT"],
+        assumptions=["short test"],
+        failure_modes=["missing data"],
+    )
+
+    preflight = build_backtest_preflight(
+        manifest=manifest,
+        strategy_file=strategy_file,
+        config_path=config,
+        userdir=tmp_path / "user_data",
+        timerange="20240101-20260501",
+        pairs=["BTC/USDT:USDT"],
+    )
+
+    assert preflight["ok"] is False
+    assert preflight["data_checks"][0]["found_path"] is None
+
+
+def test_backtest_preflight_rejects_futures_mark_and_funding_files(tmp_path) -> None:
+    strategy_file = tmp_path / "ShortStrategy.py"
+    strategy_file.write_text(
+        "from freqtrade.strategy import IStrategy\n\nclass ShortStrategy(IStrategy):\n"
+        "    timeframe = '1h'\n"
+        "    can_short = True\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "futures.json"
+    config.write_text('{"trading_mode": "futures"}', encoding="utf-8")
+    futures_dir = tmp_path / "user_data" / "data" / "binance" / "futures"
+    futures_dir.mkdir(parents=True)
+    (futures_dir / "BTC_USDT_USDT-1h-mark.feather").write_text("", encoding="utf-8")
+    (futures_dir / "BTC_USDT_USDT-1h-funding_rate.feather").write_text("", encoding="utf-8")
+    manifest = StrategyManifest(
+        strategy_id="strategy_short",
+        signal_id="signal_001",
+        name="ShortStrategy",
+        file_path=str(strategy_file),
+        generated_at="2026-05-14T00:00:00",
+        timeframe="1h",
+        symbols=["BTC/USDT:USDT"],
+        assumptions=["short test"],
+        failure_modes=["missing data"],
+    )
+
+    preflight = build_backtest_preflight(
+        manifest=manifest,
+        strategy_file=strategy_file,
+        config_path=config,
+        userdir=tmp_path / "user_data",
+        timerange="20240101-20260501",
+        pairs=["BTC/USDT:USDT"],
+    )
+
+    assert preflight["ok"] is False
+    assert preflight["data_checks"][0]["found_path"] is None
+
+
 def test_parse_freqtrade_result_json_applies_pass_criteria() -> None:
     report = parse_freqtrade_result_json(
         {

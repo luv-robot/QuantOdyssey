@@ -349,16 +349,16 @@ def _data_file_check(userdir: Path, pair: str, timeframe: str, trading_mode: str
     candidates = _data_file_candidates(data_root, pair, timeframe, trading_mode)
     found = next((path for path in candidates if path.exists()), None)
     if found is None and data_root.exists():
-        tokens = _pair_file_tokens(pair)
-        matches = [
-            path
-            for path in data_root.rglob(f"*{timeframe}*")
-            if path.is_file()
-            and path.suffix in {".feather", ".json", ".json.gz"}
-            and all(token in path.name for token in tokens[:2])
-            and _matches_trading_mode_file(path, trading_mode)
-        ]
-        found = matches[0] if matches else None
+        candidate_names = {path.name for path in candidates}
+        found = next(
+            (
+                path
+                for name in candidate_names
+                for path in data_root.rglob(name)
+                if path.is_file() and _matches_trading_mode_file(path, trading_mode)
+            ),
+            None,
+        )
     return {
         "pair": pair,
         "timeframe": timeframe,
@@ -380,15 +380,16 @@ def _data_file_candidates(
     names = [f"{spot_name}-{timeframe}.feather", f"{spot_name}-{timeframe}.json"]
     if trading_mode == "futures":
         names = [
+            f"{futures_name}-{timeframe}-futures.feather",
+            f"{futures_name}-{timeframe}-futures.json",
             f"{futures_name}-{timeframe}.feather",
             f"{futures_name}-{timeframe}.json",
             f"{spot_name}-{timeframe}-futures.feather",
         ]
-    return [data_root / "binance" / name for name in names]
-
-
-def _pair_file_tokens(pair: str) -> list[str]:
-    return [token for token in re.split(r"[/_:.-]+", pair) if token]
+    roots = [data_root / "binance"]
+    if trading_mode == "futures":
+        roots.append(data_root / "binance" / "futures")
+    return [root / name for root in roots for name in names]
 
 
 def _matches_trading_mode_file(path: Path, trading_mode: str) -> bool:
