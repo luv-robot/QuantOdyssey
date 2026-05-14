@@ -22,13 +22,19 @@ PERIOD_SECONDS = {
     "12h": 12 * 60 * 60,
     "1d": 24 * 60 * 60,
 }
+MAX_BINANCE_OPEN_INTEREST_DAYS = 29
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download Binance futures historical open interest.")
     parser.add_argument("--symbol", default=os.getenv("FREQTRADE_PAIRS", "BTC/USDT:USDT").split(",")[0])
     parser.add_argument("--period", default="5m", choices=sorted(PERIOD_SECONDS))
-    parser.add_argument("--days", type=int, default=int(os.getenv("BINANCE_OI_DOWNLOAD_DAYS", "365")))
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=int(os.getenv("BINANCE_OI_DOWNLOAD_DAYS", str(MAX_BINANCE_OPEN_INTEREST_DAYS))),
+        help="Days to download. Binance historical OI only exposes roughly the latest 30 days.",
+    )
     parser.add_argument("--output", default=None)
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
@@ -36,7 +42,13 @@ def main() -> int:
     symbol = _normalize_futures_symbol(args.symbol)
     output = Path(args.output) if args.output else _default_output_path(symbol, args.period)
     output.parent.mkdir(parents=True, exist_ok=True)
-    points = download_open_interest(symbol, period=args.period, days=args.days, limit=args.limit)
+    days = min(args.days, MAX_BINANCE_OPEN_INTEREST_DAYS)
+    if args.days != days:
+        print(
+            f"Requested {args.days} days, capped to {days} days because Binance only exposes recent OI history.",
+            file=sys.stderr,
+        )
+    points = download_open_interest(symbol, period=args.period, days=days, limit=args.limit)
     output.write_text(json.dumps([point.model_dump(mode="json") for point in points], indent=2), encoding="utf-8")
     print(
         json.dumps(
