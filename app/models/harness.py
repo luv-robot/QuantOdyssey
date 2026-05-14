@@ -40,6 +40,15 @@ class ResearchFindingSeverity(str, Enum):
     HIGH = "high"
 
 
+class StrategyScreeningAction(str, Enum):
+    DEEPEN_VALIDATION = "deepen_validation"
+    UPGRADE_DATA = "upgrade_data"
+    ROTATE_STRATEGY_FAMILY = "rotate_strategy_family"
+    RECORD_FAILURE = "record_failure"
+    NEEDS_MORE_COVERAGE = "needs_more_coverage"
+    WATCHLIST_REVIEW = "watchlist_review"
+
+
 class ResearchTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -92,6 +101,85 @@ class ResearchHarnessCycle(BaseModel):
     finding_ids: list[str] = Field(default_factory=list)
     task_ids: list[str] = Field(default_factory=list)
     summary: str = Field(min_length=1)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class RegimeBucketStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    regime: str = Field(min_length=1)
+    candle_count: int = Field(ge=0)
+    share: float = Field(ge=0, le=1)
+    average_return: float = 0
+    realized_volatility: float = Field(default=0, ge=0)
+    trend_return: float = 0
+
+
+class RegimeCoverageReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    symbols: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    buckets: list[RegimeBucketStats] = Field(default_factory=list)
+    is_coverage_balanced: bool = False
+    dominant_regime: str | None = None
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StrategyFamilyBaselineRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy_family: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    total_return: float
+    profit_factor: float = Field(ge=0)
+    sharpe: float | None = None
+    max_drawdown: float = Field(le=0)
+    trades: int = Field(ge=0)
+    positive_cell_count: int = Field(default=0, ge=0)
+    tested_cell_count: int = Field(default=0, ge=0)
+
+
+class StrategyFamilyBaselineBoard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    board_id: str = Field(min_length=1)
+    symbols: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    rows: list[StrategyFamilyBaselineRow] = Field(default_factory=list)
+    best_family: str | None = None
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DataSufficiencyGateReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gate_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    available_level: DataSufficiencyLevel
+    minimum_validation_level: DataSufficiencyLevel
+    recommended_next_level: DataSufficiencyLevel
+    can_continue: bool
+    should_upgrade_data: bool
+    missing_evidence: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StrategyScreeningDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: str = Field(min_length=1)
+    strategy_family: str = Field(min_length=1)
+    action: StrategyScreeningAction
+    confidence: float = Field(ge=0, le=1)
+    rationale: list[str] = Field(default_factory=list)
+    next_tasks: list[ResearchTask] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

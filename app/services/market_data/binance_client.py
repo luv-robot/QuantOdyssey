@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from app.models import (
+    AggregateTrade,
     FundingRatePoint,
     OhlcvCandle,
     OpenInterestPoint,
@@ -95,6 +96,27 @@ class BinanceMarketDataClient:
         )
         return _parse_orderbook(symbol, payload)
 
+    def fetch_aggregate_trades(
+        self,
+        symbol: str,
+        limit: int = 500,
+        trading_mode: str = "futures",
+        from_id: int | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[AggregateTrade]:
+        base_url = self.futures_base_url if trading_mode == "futures" else self.spot_base_url
+        path = "/fapi/v1/aggTrades" if trading_mode == "futures" else "/api/v3/aggTrades"
+        params: dict[str, Any] = {"symbol": _api_symbol(symbol), "limit": limit}
+        if from_id is not None:
+            params["fromId"] = from_id
+        if start_time is not None:
+            params["startTime"] = int(start_time.timestamp() * 1000)
+        if end_time is not None:
+            params["endTime"] = int(end_time.timestamp() * 1000)
+        payload = self._get(base_url, path, params)
+        return [_parse_aggregate_trade(symbol, row) for row in payload]
+
     def _get(self, base_url: str, path: str, params: dict[str, Any]) -> Any:
         url = f"{base_url}{path}?{urlencode(params)}"
         return self.transport(url)
@@ -154,6 +176,20 @@ def _parse_open_interest_history(symbol: str, row: dict[str, Any]) -> OpenIntere
         symbol=symbol.upper(),
         timestamp=_dt_from_ms(row["timestamp"]),
         open_interest=float(row["sumOpenInterest"]),
+        raw=row,
+    )
+
+
+def _parse_aggregate_trade(symbol: str, row: dict[str, Any]) -> AggregateTrade:
+    return AggregateTrade(
+        symbol=symbol.upper(),
+        aggregate_trade_id=int(row["a"]),
+        price=float(row["p"]),
+        quantity=float(row["q"]),
+        first_trade_id=int(row["f"]),
+        last_trade_id=int(row["l"]),
+        timestamp=_dt_from_ms(row["T"]),
+        buyer_is_maker=bool(row["m"]),
         raw=row,
     )
 

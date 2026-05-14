@@ -57,6 +57,19 @@ def fake_binance_transport(url: str):
             }
         ]
 
+    if "/fapi/v1/aggTrades" in url:
+        return [
+            {
+                "a": 123,
+                "p": "101.5",
+                "q": "0.25",
+                "f": 120,
+                "l": 122,
+                "T": 1710000000500,
+                "m": True,
+            }
+        ]
+
     if "/api/v3/depth" in url:
         return {
             "lastUpdateId": 123,
@@ -75,6 +88,7 @@ def test_binance_client_parses_market_data() -> None:
     open_interest = client.fetch_open_interest("BTC/USDT")
     open_interest_history = client.fetch_open_interest_history("BTC/USDT")
     orderbook = client.fetch_orderbook("BTC/USDT")
+    agg_trades = client.fetch_aggregate_trades("BTC/USDT:USDT")
 
     assert len(candles) == 60
     assert candles[-1].volume == 500
@@ -82,6 +96,8 @@ def test_binance_client_parses_market_data() -> None:
     assert open_interest.open_interest == 12345.67
     assert open_interest_history[-1].open_interest == 11111.1
     assert orderbook.bids[0].price == 159.9
+    assert agg_trades[0].aggregate_trade_id == 123
+    assert agg_trades[0].buyer_is_maker is True
 
 
 def test_binance_client_normalizes_freqtrade_futures_symbols_and_history_window() -> None:

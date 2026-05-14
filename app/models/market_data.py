@@ -60,6 +60,20 @@ class OpenInterestPoint(BaseModel):
     raw: dict[str, Any]
 
 
+class AggregateTrade(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    aggregate_trade_id: int = Field(ge=0)
+    price: float = Field(gt=0)
+    quantity: float = Field(ge=0)
+    first_trade_id: int = Field(ge=0)
+    last_trade_id: int = Field(ge=0)
+    timestamp: datetime
+    buyer_is_maker: bool
+    raw: dict[str, Any]
+
+
 class OrderBookLevel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
