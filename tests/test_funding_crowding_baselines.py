@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from app.models import BacktestReport, BacktestStatus, MarketSignal, SignalType
-from app.services.backtester import compare_to_proxy_baselines
+from app.models import BacktestReport, BacktestStatus, FundingRatePoint, MarketSignal, OhlcvCandle, SignalType
+from app.services.backtester import compare_to_event_level_baselines, compare_to_proxy_baselines
 
 
 def test_funding_signal_gets_type_specific_proxy_baselines() -> None:
@@ -39,3 +39,92 @@ def test_funding_signal_gets_type_specific_proxy_baselines() -> None:
     assert "opposite_direction_proxy" in names
     assert report.outperformed_best_baseline is True
     assert any("Funding-crowding baselines" in finding for finding in report.findings)
+
+
+def test_funding_signal_gets_event_level_baselines_when_market_data_is_available() -> None:
+    signal = MarketSignal(
+        signal_id="signal_funding_event_baseline",
+        created_at=datetime.utcnow(),
+        exchange="binance",
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        signal_type=SignalType.FUNDING_OI_EXTREME,
+        rank_score=88,
+        features={"funding_percentile_30d": 94, "open_interest_percentile_30d": 82},
+        hypothesis="funding crowding with failed breakout",
+        data_sources=["ohlcv", "funding"],
+    )
+    backtest = BacktestReport(
+        backtest_id="bt_funding_event",
+        strategy_id="strategy_funding_event",
+        timerange="20240101-20260501",
+        trades=120,
+        win_rate=0.58,
+        profit_factor=1.6,
+        sharpe=1.2,
+        max_drawdown=-0.07,
+        total_return=0.18,
+        status=BacktestStatus.PASSED,
+    )
+
+    report = compare_to_event_level_baselines(
+        signal,
+        backtest,
+        candles=_event_candles(),
+        funding_rates=_event_funding_rates(),
+    )
+    names = {item.name for item in report.baselines}
+
+    assert "funding_extreme_only_event" in names
+    assert "funding_plus_oi_event" in names
+    assert "simple_failed_breakout_event" in names
+    assert "opposite_direction_event" in names
+    assert "buy_and_hold_event" in names
+    assert not any(name.endswith("_proxy") for name in names)
+    assert any("event-level baseline" in finding for finding in report.findings)
+
+
+def _event_candles(count: int = 180) -> list[OhlcvCandle]:
+    start = datetime(2026, 5, 1)
+    candles = []
+    for index in range(count):
+        open_time = start + timedelta(minutes=5 * index)
+        base = 100 + index * 0.08
+        close = base
+        high = base + 0.2
+        low = base - 0.5
+        if index in {80, 120, 160}:
+            high = base + 4
+            close = base - 1
+            low = close - 0.5
+        candles.append(
+            OhlcvCandle(
+                symbol="BTC/USDT:USDT",
+                interval="5m",
+                open_time=open_time,
+                close_time=open_time + timedelta(minutes=5),
+                open=base - 0.1,
+                high=high,
+                low=low,
+                close=close,
+                volume=100 + index,
+                quote_volume=close * (100 + index),
+                trade_count=100 + index,
+                raw=[],
+            )
+        )
+    return candles
+
+
+def _event_funding_rates(count: int = 180) -> list[FundingRatePoint]:
+    start = datetime(2026, 5, 1)
+    return [
+        FundingRatePoint(
+            symbol="BTC/USDT:USDT",
+            funding_time=start + timedelta(minutes=5 * index),
+            funding_rate=0.00001 + index * 0.000001,
+            mark_price=None,
+            raw={},
+        )
+        for index in range(count)
+    ]

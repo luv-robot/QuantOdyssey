@@ -35,6 +35,7 @@ from app.models import (
     WorkflowState,
 )
 from app.services.backtester import (
+    compare_to_event_level_baselines,
     compare_to_proxy_baselines,
     evaluate_robustness,
     run_mock_backtest,
@@ -44,6 +45,13 @@ from app.services.backtester import (
 from app.services.backtester.freqtrade_cli import run_freqtrade_backtest
 from app.services.backtester.monte_carlo import run_trade_bootstrap_monte_carlo
 from app.services.backtester.validation import validate_backtest_reliability
+from app.services.market_data.freqtrade_files import (
+    find_freqtrade_funding_file,
+    find_open_interest_file,
+    load_freqtrade_funding_rates,
+    load_freqtrade_ohlcv,
+    load_open_interest_points,
+)
 from app.services.market_data.quality import audit_market_signal_quality
 from app.services.market_data.regime_labels import label_market_regime
 from app.services.operations import evaluate_resource_budget
@@ -225,7 +233,7 @@ def run_human_research_pipeline(
             random_seed=monte_carlo_config.seed if monte_carlo_config is not None else None,
         )
         repository.save_experiment_manifest(experiment_manifest)
-        baseline_comparison = compare_to_proxy_baselines(signal, backtest)
+        baseline_comparison = _compare_to_baselines(signal, backtest, backtest_metadata)
         repository.save_baseline_comparison(baseline_comparison)
 
         validation = _validate_backtest(backtest)
@@ -516,6 +524,40 @@ def _run_backtest(
     metadata["backtest_mode"] = "real"
     metadata["config_path"] = metadata.get("config_path") or str(config_path)
     return backtest, trades, metadata
+
+
+def _compare_to_baselines(
+    signal: MarketSignal,
+    backtest: BacktestReport,
+    metadata: dict,
+) -> BaselineComparisonReport:
+    ohlcv_path = _primary_ohlcv_path(metadata)
+    if ohlcv_path is None:
+        return compare_to_proxy_baselines(signal, backtest)
+    try:
+        funding_path = find_freqtrade_funding_file(ohlcv_path, signal.symbol, signal.timeframe)
+        if funding_path is None:
+            return compare_to_proxy_baselines(signal, backtest)
+        open_interest_path = find_open_interest_file(ohlcv_path, signal.symbol, signal.timeframe)
+        return compare_to_event_level_baselines(
+            signal,
+            backtest,
+            candles=load_freqtrade_ohlcv(ohlcv_path, signal.symbol, signal.timeframe),
+            funding_rates=load_freqtrade_funding_rates(funding_path, signal.symbol),
+            open_interest_points=None
+            if open_interest_path is None
+            else load_open_interest_points(open_interest_path, signal.symbol),
+        )
+    except Exception:
+        return compare_to_proxy_baselines(signal, backtest)
+
+
+def _primary_ohlcv_path(metadata: dict) -> Path | None:
+    for item in metadata.get("preflight", {}).get("data_checks", []):
+        found_path = item.get("found_path")
+        if found_path:
+            return Path(found_path)
+    return None
 
 
 def _failure_reason(

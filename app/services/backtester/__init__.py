@@ -1,4 +1,4 @@
-from app.services.backtester.baselines import compare_to_proxy_baselines
+from app.services.backtester.baselines import compare_to_event_level_baselines, compare_to_proxy_baselines
 from app.services.backtester.freqtrade_cli import (
     build_backtest_command,
     build_backtest_preflight,
@@ -26,6 +26,7 @@ __all__ = [
     "build_backtest_command",
     "build_backtest_preflight",
     "compare_to_proxy_baselines",
+    "compare_to_event_level_baselines",
     "extract_freqtrade_trades",
     "find_latest_backtest_result",
     "load_freqtrade_trading_mode",

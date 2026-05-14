@@ -65,11 +65,18 @@ class BinanceMarketDataClient:
         symbol: str,
         period: str = "5m",
         limit: int = 500,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> list[OpenInterestPoint]:
+        params: dict[str, Any] = {"symbol": _api_symbol(symbol), "period": period, "limit": limit}
+        if start_time is not None:
+            params["startTime"] = int(start_time.timestamp() * 1000)
+        if end_time is not None:
+            params["endTime"] = int(end_time.timestamp() * 1000)
         payload = self._get(
             self.futures_base_url,
             "/futures/data/openInterestHist",
-            {"symbol": _api_symbol(symbol), "period": period, "limit": limit},
+            params,
         )
         return [_parse_open_interest_history(symbol, row) for row in payload]
 
@@ -99,7 +106,7 @@ class BinanceMarketDataClient:
 
 
 def _api_symbol(symbol: str) -> str:
-    return symbol.replace("/", "").upper()
+    return symbol.split(":", 1)[0].replace("/", "").upper()
 
 
 def _dt_from_ms(value: int | str) -> datetime:

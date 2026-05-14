@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 from app.flows import run_real_data_scout_flow
 from app.models import DataQualityFlag
@@ -81,6 +82,34 @@ def test_binance_client_parses_market_data() -> None:
     assert open_interest.open_interest == 12345.67
     assert open_interest_history[-1].open_interest == 11111.1
     assert orderbook.bids[0].price == 159.9
+
+
+def test_binance_client_normalizes_freqtrade_futures_symbols_and_history_window() -> None:
+    urls = []
+
+    def capture_transport(url: str):
+        urls.append(url)
+        return [
+            {
+                "symbol": "BTCUSDT",
+                "sumOpenInterest": "11111.1",
+                "sumOpenInterestValue": "22222.2",
+                "timestamp": 1710000000000,
+            }
+        ]
+
+    client = BinanceMarketDataClient(transport=capture_transport)
+    client.fetch_open_interest_history(
+        "BTC/USDT:USDT",
+        period="5m",
+        start_time=datetime(2024, 3, 1),
+        end_time=datetime(2024, 3, 2),
+    )
+    query = parse_qs(urlparse(urls[-1]).query)
+
+    assert query["symbol"] == ["BTCUSDT"]
+    assert "startTime" in query
+    assert "endTime" in query
 
 
 def test_quality_check_flags_missing_data() -> None:

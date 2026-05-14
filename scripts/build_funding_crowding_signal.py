@@ -7,12 +7,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.services.market_data import build_funding_crowding_fade_event  # noqa: E402
-from app.storage import QuantRepository  # noqa: E402
-from scripts.import_freqtrade_market_data import (  # noqa: E402
+from app.services.market_data import (  # noqa: E402
+    build_funding_crowding_fade_event,
     load_freqtrade_funding_rates,
     load_freqtrade_ohlcv,
+    load_open_interest_points,
 )
+from app.storage import QuantRepository  # noqa: E402
 
 
 def main() -> int:
@@ -24,6 +25,7 @@ def main() -> int:
     parser.add_argument("--timeframe", default="5m")
     parser.add_argument("--ohlcv-file", required=True)
     parser.add_argument("--funding-file", required=True)
+    parser.add_argument("--open-interest-file", default=None)
     parser.add_argument("--min-rank", type=int, default=60)
     parser.add_argument("--save", action="store_true")
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL", "sqlite+pysqlite:///market_data.sqlite3"))
@@ -31,12 +33,18 @@ def main() -> int:
 
     candles = load_freqtrade_ohlcv(Path(args.ohlcv_file), args.symbol, args.timeframe)
     funding_rates = load_freqtrade_funding_rates(Path(args.funding_file), args.symbol)
+    open_interest_points = (
+        None
+        if args.open_interest_file is None
+        else load_open_interest_points(Path(args.open_interest_file), args.symbol)
+    )
     result = build_funding_crowding_fade_event(
         thesis_id=args.thesis_id,
         symbol=args.symbol,
         timeframe=args.timeframe,
         candles=candles,
         funding_rates=funding_rates,
+        open_interest_points=open_interest_points,
         min_rank=args.min_rank,
     )
     if args.save and result.signal is not None and result.event_episode is not None:

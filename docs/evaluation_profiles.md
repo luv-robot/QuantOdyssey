@@ -241,6 +241,19 @@ simple_rule_version
 
 不要用 buy-and-hold 作为事件驱动策略的唯一 baseline。
 
+For Funding Crowding Fade, QuantOdyssey now prefers event-level baselines when matching OHLCV and
+funding files are available:
+
+```text
+funding_extreme_only_event
+funding_plus_oi_event
+simple_failed_breakout_event
+opposite_direction_event
+```
+
+If historical open interest is unavailable, the event-level baseline may use volume as a temporary
+participation proxy, but ReviewSession must mark `historical_open_interest` as missing evidence.
+
 ### Permission or Filter Baselines
 
 ```text

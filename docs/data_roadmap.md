@@ -29,6 +29,7 @@ python scripts/audit_free_data_sources.py
 python scripts/check_backtest_environment.py
 python scripts/download_freqtrade_data.py --trading-mode spot
 python scripts/download_freqtrade_data.py --trading-mode futures
+python scripts/download_binance_open_interest.py --symbol BTC/USDT:USDT --period 5m
 python scripts/import_freqtrade_market_data.py --data-file <ohlcv.feather> --funding-file <funding_rate.feather>
 ```
 
@@ -36,9 +37,12 @@ Current free data capability:
 
 - Local Freqtrade spot and futures OHLCV coverage is preflighted before a real backtest starts.
 - Freqtrade futures funding-rate feather files can be imported as historical funding evidence.
+- Binance historical open-interest can be downloaded to a sidecar JSON file next to Freqtrade
+  futures OHLCV and then consumed by Funding Crowding event generation.
 - Funding Crowding Fade has a first traceable event builder that derives funding percentile,
   failed-breakout state, VWAP distance, setup score, trigger score, and missing OI evidence from
-  Freqtrade futures OHLCV + funding files.
+  Freqtrade futures OHLCV + funding files. If an open-interest sidecar file is present, the event
+  uses historical OI instead of the temporary volume proxy.
 - Binance public endpoints cover spot/futures klines, funding rate, current open interest,
   historical open interest, and spot/futures orderbook snapshots.
 - Quality reports can flag missing candles, non-positive price/volume, invalid orderbooks, and
