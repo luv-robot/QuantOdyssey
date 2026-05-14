@@ -44,3 +44,21 @@ search cost is high but baseline advantage is weak
 ```
 
 Search budget is not a moral penalty. It is a confidence adjustment against survivor bias.
+
+## Low-Frequency Template Guardrail
+
+Some strategy ideas may be conceptually strong but too rare for the current research loop. When the
+event frequency is too low, the system should not compensate by adding speculative proxies, widening
+definitions until the thesis changes, or launching optimizer/hyperopt on a tiny set of events.
+
+Default response:
+
+```text
+archive the negative finding
+record why the sample was insufficient
+pause expensive work on that template
+prefer a naturally higher-frequency strategy family for the next cycle
+```
+
+Funding Crowding Fade currently falls under this guardrail unless a future data window produces
+enough real events across multiple symbols or timeframes.

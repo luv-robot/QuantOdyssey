@@ -329,6 +329,12 @@ def _universe_findings(
             f"No trial id met cross-market robust confirmation threshold={min_market_confirmations}; "
             "treat isolated best cells as research leads, not alpha evidence."
         )
+    if sufficient_best == 0 and not robust_trial_ids:
+        findings.append(
+            "Scope control: pause Funding Crowding Fade optimization and do not spend more resources "
+            "inventing proxy data for this template; switch the next Harness cycle toward naturally "
+            "higher-frequency strategy families."
+        )
     if best_counts:
         top_best = next(iter(dict(sorted(best_counts.items(), key=lambda item: (-item[1], item[0]))).items()))
         findings.append(f"Most frequent best trial was {top_best[0]} in {top_best[1]} cell(s).")

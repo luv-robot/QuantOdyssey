@@ -94,6 +94,30 @@ def test_universe_report_summarizes_cross_market_stability() -> None:
     assert btc_report.report_id in universe.child_report_ids
 
 
+def test_universe_report_pauses_low_frequency_template_before_optimizer() -> None:
+    task = _sample_task()
+    report = run_funding_crowding_event_definition_sensitivity(
+        task=task,
+        candles=_sample_candles(),
+        funding_rates=_sample_funding_rates(),
+        open_interest_points=_sample_open_interest(),
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        min_trade_count=2,
+    )
+
+    universe = build_event_definition_universe_report(
+        task=task,
+        reports=[report],
+        min_market_confirmations=2,
+        min_trade_count=20,
+    )
+
+    assert not universe.robust_trial_ids
+    assert any("pause Funding Crowding Fade optimization" in item for item in universe.findings)
+    assert any("higher-frequency strategy families" in item for item in universe.findings)
+
+
 def test_repository_persists_event_definition_universe_report() -> None:
     repository = QuantRepository()
     task = _sample_task()

@@ -72,6 +72,27 @@ for robustness evidence, not alpha discovery or automatic strategy rewriting.
 The Harness may automatically generate and run low-risk research experiments, but paper promotion,
 live trading, risk-budget changes, and any capital decision require human approval.
 
+## Strategy Family Scope Control
+
+Harness must not keep spending research budget on a strategy family only because the narrative is
+interesting. If a bounded universe scan shows that a template cannot produce enough valid events,
+the correct next action is to pause or downgrade that template, not to invent lower-quality proxy
+data or run optimizer over a tiny sample.
+
+For Funding Crowding Fade specifically:
+
+```text
+if cross-market event-definition scan has no robust trial ids
+and no best trial meets the sample floor:
+  pause optimizer / hyperopt
+  do not add synthetic or narrative-only data proxies
+  summarize the negative result
+  switch the next Harness cycle toward naturally higher-frequency strategy families
+```
+
+This does not mean the thesis is false forever. It means the current research budget should move to
+strategies where the market produces enough repeatable observations to test.
+
 ## Autonomy Levels
 
 ```text
