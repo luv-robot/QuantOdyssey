@@ -38,6 +38,8 @@ KEY_TABLES = [
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",
     "failed_breakout_universe_reports",
+    "strategy_family_walk_forward_reports",
+    "strategy_family_monte_carlo_reports",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -270,6 +272,7 @@ def render_research_run_detail(engine) -> None:
         thesis["thesis_id"],
         "Failed Breakout Universe Reports",
     )
+    _render_strategy_family_validation_followups(engine, thesis["thesis_id"])
 
     strategies = _records_where_payload_field(
         engine,
@@ -429,6 +432,51 @@ def _records_where_payload_field(engine, table_name: str, field: str, value: str
     return [record for record in records if record.get(field) == value]
 
 
+def _render_strategy_family_validation_followups(engine, thesis_id: str) -> None:
+    universe_reports = _records_where_payload_field(engine, "failed_breakout_universe_reports", "thesis_id", thesis_id)
+    if not universe_reports:
+        return
+    rendered = False
+    for universe in universe_reports:
+        source_id = universe.get("report_id")
+        if not source_id:
+            continue
+        walk_forward_reports = _records_where_payload_field(
+            engine,
+            "strategy_family_walk_forward_reports",
+            "source_universe_report_id",
+            source_id,
+        )
+        monte_carlo_reports = _records_where_payload_field(
+            engine,
+            "strategy_family_monte_carlo_reports",
+            "source_universe_report_id",
+            source_id,
+        )
+        if not walk_forward_reports and not monte_carlo_reports:
+            continue
+        if not rendered:
+            st.write("**Strategy Family Validation Follow-ups**")
+            rendered = True
+        with st.expander(f"Validation follow-ups for {source_id}", expanded=False):
+            for report in walk_forward_reports:
+                st.metric("Walk-forward pass rate", f"{report.get('pass_rate', 0):.1%}")
+                if report.get("passed"):
+                    st.success("Walk-forward passed")
+                else:
+                    st.warning("Walk-forward did not pass")
+                st.json(report)
+            for report in monte_carlo_reports:
+                st.metric("MC probability of loss", f"{report.get('probability_of_loss', 0):.1%}")
+                if report.get("requires_human_confirmation"):
+                    st.warning("Monte Carlo requires human confirmation")
+                elif report.get("passed"):
+                    st.success("Monte Carlo passed")
+                else:
+                    st.warning("Monte Carlo did not pass")
+                st.json(report)
+
+
 def _render_single_payload(engine, table_name: str, field: str, value: str, title: str) -> None:
     records = _records_where_payload_field(engine, table_name, field, value)
     if not records:
@@ -477,6 +525,8 @@ def main() -> None:
             "Research Design",
             "Event Episodes",
             "Asset Index",
+            "Strategy Family WF",
+            "Strategy Family MC",
             "Strategy Registry",
             "Experiments",
             "Experiment Queue",
@@ -505,6 +555,8 @@ def main() -> None:
         "Research Design": "research_design_drafts",
         "Event Episodes": "event_episodes",
         "Asset Index": "research_asset_index",
+        "Strategy Family WF": "strategy_family_walk_forward_reports",
+        "Strategy Family MC": "strategy_family_monte_carlo_reports",
         "Strategy Registry": "strategy_registry",
         "Experiments": "experiment_manifests",
         "Experiment Queue": "experiment_queue",
