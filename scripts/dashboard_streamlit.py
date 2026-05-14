@@ -342,6 +342,37 @@ def render_research_run_detail(engine) -> None:
                     st.json(review_session.get("ai_questions") or [])
                     st.write("**Next Experiments**")
                     st.json(review_session.get("next_experiments") or [])
+            findings = _records_where_payload_field(
+                engine,
+                "research_findings",
+                "strategy_id",
+                strategy_id,
+            )
+            if findings:
+                st.write("**Harness Findings**")
+                for finding in findings:
+                    severity = finding.get("severity")
+                    if severity == "high":
+                        st.error(finding.get("summary"))
+                    elif severity == "medium":
+                        st.warning(finding.get("summary"))
+                    else:
+                        st.info(finding.get("summary"))
+                    st.json(finding)
+            tasks = _records_where_payload_field(
+                engine,
+                "research_tasks",
+                "strategy_id",
+                strategy_id,
+            )
+            if tasks:
+                st.write("**Harness Next Tasks**")
+                for task in tasks:
+                    if task.get("approval_required"):
+                        st.warning(f"{task.get('task_type')} requires approval")
+                    else:
+                        st.info(task.get("task_type"))
+                    st.json(task)
 
 
 def _records_where_payload_field(engine, table_name: str, field: str, value: str) -> list[dict]:

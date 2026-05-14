@@ -64,6 +64,9 @@ def test_human_research_pipeline_persists_full_candidate_chain(tmp_path):
     assert all(item.resource_budget is not None for item in result.candidates)
     assert all(item.monte_carlo is not None for item in result.candidates)
     assert len(result.review_sessions) == 3
+    assert result.harness_cycle is not None
+    assert len(result.research_findings) == 3
+    assert result.research_tasks
     assert repository.get_research_thesis("thesis_pipeline").status == ThesisStatus.SUPPORTED
     pre_reviews = repository.query_thesis_pre_reviews(thesis_id="thesis_pipeline")
     assert len(pre_reviews) == 1
@@ -112,6 +115,13 @@ def test_human_research_pipeline_persists_full_candidate_chain(tmp_path):
     assert len(review_sessions) == 3
     assert all(session.scorecard for session in review_sessions)
     assert all(session.maturity_score.overall_score >= 0 for session in review_sessions)
+    findings = repository.query_research_findings(thesis_id="thesis_pipeline")
+    assert len(findings) == 3
+    tasks = repository.query_research_tasks(thesis_id="thesis_pipeline")
+    assert tasks
+    cycles = repository.query_research_harness_cycles(thesis_id="thesis_pipeline")
+    assert len(cycles) == 1
+    assert cycles[0].task_ids
 
 
 def test_human_research_pipeline_gates_expensive_monte_carlo(tmp_path):

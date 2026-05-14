@@ -20,7 +20,10 @@ from app.models import (
     MonteCarloBacktestReport,
     PaperTradingPlan,
     ResearchDesignDraft,
+    ResearchFinding,
+    ResearchHarnessCycle,
     ResearchThesis,
+    ResearchTask,
     ResourceBudgetReport,
     RealBacktestValidationSuiteReport,
     CrossSymbolValidationReport,
@@ -54,6 +57,7 @@ from app.services.market_data.freqtrade_files import (
 )
 from app.services.market_data.quality import audit_market_signal_quality
 from app.services.market_data.regime_labels import label_market_regime
+from app.services.harness import build_research_harness_cycle
 from app.services.operations import evaluate_resource_budget
 from app.services.paper_trading import build_paper_trading_plan
 from app.services.researcher import build_researcher_logs
@@ -114,6 +118,9 @@ class HumanResearchPipelineResult(BaseModel):
     ranking: CandidateRankingResult
     candidates: list[CandidateResearchResult]
     review_sessions: list[ReviewSession]
+    research_findings: list[ResearchFinding]
+    research_tasks: list[ResearchTask]
+    harness_cycle: ResearchHarnessCycle | None = None
     selected_candidate_id: str | None = None
     paper_trading_plan: PaperTradingPlan | None = None
     final_status: ThesisStatus
@@ -379,6 +386,17 @@ def run_human_research_pipeline(
         if negative_case is not None:
             repository.save_negative_result_case(negative_case)
 
+    harness_cycle, research_findings, research_tasks = build_research_harness_cycle(
+        thesis=thesis,
+        event_episode=event_episode,
+        review_sessions=review_sessions,
+    )
+    for finding in research_findings:
+        repository.save_research_finding(finding)
+    for task in research_tasks:
+        repository.save_research_task(task)
+    repository.save_research_harness_cycle(harness_cycle)
+
     final_status = ThesisStatus.SUPPORTED if selected_candidate_id else ThesisStatus.REJECTED
     thesis = thesis.model_copy(update={"status": final_status})
     repository.save_research_thesis(thesis)
@@ -391,6 +409,9 @@ def run_human_research_pipeline(
         ranking=ranking.model_copy(update={"selected_candidate_id": selected_candidate_id}),
         candidates=results,
         review_sessions=review_sessions,
+        research_findings=research_findings,
+        research_tasks=research_tasks,
+        harness_cycle=harness_cycle,
         selected_candidate_id=selected_candidate_id,
         paper_trading_plan=paper_trading_plan,
         final_status=final_status,

@@ -10,7 +10,7 @@ Research Harness
 -> ResearchTask
 -> strategy variants
 -> backtest
--> optimizer / sensitivity
+-> bounded sensitivity task
 -> Monte Carlo / stress
 -> Reviewer
 -> next ResearchTask
@@ -52,5 +52,9 @@ Reviewer clusters repeated failures
 Harness turns failures into next tasks
 1-2 variants reach paper watchlist quality
 ```
+
+Optimizer/hyperopt is intentionally not a default autonomous step in Phase 1. Harness should first
+generate explicit parameter-sensitivity tasks with declared ranges, search budget, and approval
+requirements. This keeps the private mining machine from becoming a noise-fitting machine.
 
 If these are not true, platformization is premature.

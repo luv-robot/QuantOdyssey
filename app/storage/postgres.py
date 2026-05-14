@@ -37,7 +37,10 @@ from app.models import (
     PortfolioRiskReport,
     PromptLog,
     ResearchDesignDraft,
+    ResearchFinding,
+    ResearchHarnessCycle,
     ResearchAssetIndexEntry,
+    ResearchTask,
     ResearchThesis,
     ResourceBudgetReport,
     ReviewCase,
@@ -288,6 +291,45 @@ class NegativeResultRecord(Base):
     signal_id = Column(String, index=True, nullable=False)
     strategy_id = Column(String, index=True, nullable=False)
     candidate_id = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ResearchFindingRecord(Base):
+    __tablename__ = "research_findings"
+
+    finding_id = Column(String, primary_key=True)
+    signal_id = Column(String, index=True, nullable=False)
+    strategy_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    finding_type = Column(String, index=True, nullable=False)
+    severity = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ResearchTaskRecord(Base):
+    __tablename__ = "research_tasks"
+
+    task_id = Column(String, primary_key=True)
+    task_type = Column(String, index=True, nullable=False)
+    subject_type = Column(String, index=True, nullable=False)
+    subject_id = Column(String, index=True, nullable=False)
+    signal_id = Column(String, index=True)
+    strategy_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    status = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ResearchHarnessCycleRecord(Base):
+    __tablename__ = "research_harness_cycles"
+
+    cycle_id = Column(String, primary_key=True)
+    signal_id = Column(String, index=True, nullable=False)
+    thesis_id = Column(String, index=True)
+    source = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1127,6 +1169,123 @@ class QuantRepository:
                 query = query.filter(NegativeResultRecord.strategy_id == strategy_id)
             records = query.order_by(NegativeResultRecord.created_at.desc()).limit(limit).all()
             return [_load(NegativeResultCase, record.payload) for record in records]
+
+    def save_research_finding(self, finding: ResearchFinding) -> ResearchFinding:
+        with self._session() as session:
+            session.merge(
+                ResearchFindingRecord(
+                    finding_id=finding.finding_id,
+                    signal_id=finding.signal_id,
+                    strategy_id=finding.strategy_id,
+                    thesis_id=finding.thesis_id,
+                    finding_type=finding.finding_type,
+                    severity=finding.severity.value,
+                    payload=_dump(finding),
+                )
+            )
+        return finding
+
+    def get_research_finding(self, finding_id: str) -> Optional[ResearchFinding]:
+        record = self._get(ResearchFindingRecord, finding_id)
+        return None if record is None else _load(ResearchFinding, record.payload)
+
+    def query_research_findings(
+        self,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        severity: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ResearchFinding]:
+        with self._session() as session:
+            query = session.query(ResearchFindingRecord)
+            if thesis_id is not None:
+                query = query.filter(ResearchFindingRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(ResearchFindingRecord.signal_id == signal_id)
+            if strategy_id is not None:
+                query = query.filter(ResearchFindingRecord.strategy_id == strategy_id)
+            if severity is not None:
+                query = query.filter(ResearchFindingRecord.severity == severity)
+            records = query.order_by(ResearchFindingRecord.created_at.desc()).limit(limit).all()
+            return [_load(ResearchFinding, record.payload) for record in records]
+
+    def save_research_task(self, task: ResearchTask) -> ResearchTask:
+        with self._session() as session:
+            session.merge(
+                ResearchTaskRecord(
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    subject_type=task.subject_type,
+                    subject_id=task.subject_id,
+                    signal_id=task.signal_id,
+                    strategy_id=task.strategy_id,
+                    thesis_id=task.thesis_id,
+                    status=task.status.value,
+                    payload=_dump(task),
+                )
+            )
+        return task
+
+    def get_research_task(self, task_id: str) -> Optional[ResearchTask]:
+        record = self._get(ResearchTaskRecord, task_id)
+        return None if record is None else _load(ResearchTask, record.payload)
+
+    def query_research_tasks(
+        self,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        task_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ResearchTask]:
+        with self._session() as session:
+            query = session.query(ResearchTaskRecord)
+            if thesis_id is not None:
+                query = query.filter(ResearchTaskRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(ResearchTaskRecord.signal_id == signal_id)
+            if strategy_id is not None:
+                query = query.filter(ResearchTaskRecord.strategy_id == strategy_id)
+            if task_type is not None:
+                query = query.filter(ResearchTaskRecord.task_type == task_type)
+            if status is not None:
+                query = query.filter(ResearchTaskRecord.status == status)
+            records = query.order_by(ResearchTaskRecord.created_at.desc()).limit(limit).all()
+            return [_load(ResearchTask, record.payload) for record in records]
+
+    def save_research_harness_cycle(self, cycle: ResearchHarnessCycle) -> ResearchHarnessCycle:
+        with self._session() as session:
+            session.merge(
+                ResearchHarnessCycleRecord(
+                    cycle_id=cycle.cycle_id,
+                    signal_id=cycle.signal_id,
+                    thesis_id=cycle.thesis_id,
+                    source=cycle.source,
+                    payload=_dump(cycle),
+                )
+            )
+        return cycle
+
+    def get_research_harness_cycle(self, cycle_id: str) -> Optional[ResearchHarnessCycle]:
+        record = self._get(ResearchHarnessCycleRecord, cycle_id)
+        return None if record is None else _load(ResearchHarnessCycle, record.payload)
+
+    def query_research_harness_cycles(
+        self,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ResearchHarnessCycle]:
+        with self._session() as session:
+            query = session.query(ResearchHarnessCycleRecord)
+            if thesis_id is not None:
+                query = query.filter(ResearchHarnessCycleRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(ResearchHarnessCycleRecord.signal_id == signal_id)
+            records = query.order_by(ResearchHarnessCycleRecord.created_at.desc()).limit(limit).all()
+            return [_load(ResearchHarnessCycle, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:

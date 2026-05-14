@@ -19,6 +19,7 @@ It emits structured artifacts:
 ```text
 ResearchTask
 ResearchFinding
+ResearchHarnessCycle
 WeeklyResearchDigest
 StrategyLifecycleRecommendation
 ```
@@ -53,6 +54,20 @@ estimated_cost
 priority_score
 status
 ```
+
+MVP implementation:
+
+```text
+HumanResearchPipelineResult
+-> ReviewSession
+-> ResearchFinding
+-> ResearchTask
+-> ResearchHarnessCycle
+```
+
+The first MVP does not execute expensive optimizer/hyperopt jobs automatically. It records bounded
+`parameter_sensitivity_test` tasks and marks larger search runs as approval-required. Optimizer is
+for robustness evidence, not alpha discovery or automatic strategy rewriting.
 
 The Harness may automatically generate and run low-risk research experiments, but paper promotion,
 live trading, risk-budget changes, and any capital decision require human approval.

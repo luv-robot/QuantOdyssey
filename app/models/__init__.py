@@ -9,6 +9,14 @@ from app.models.backtest_validation import BacktestValidationReport
 from app.models.baseline import BaselineComparisonReport, BaselineResult
 from app.models.experiment import ExperimentManifest
 from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStatus
+from app.models.harness import (
+    ResearchFinding,
+    ResearchFindingSeverity,
+    ResearchHarnessCycle,
+    ResearchTask,
+    ResearchTaskStatus,
+    ResearchTaskType,
+)
 from app.models.market_data import (
     AlternativeDataMetric,
     AlternativeDataProvider,
@@ -144,6 +152,9 @@ __all__ = [
     "PaperTradingReport",
     "PaperVsBacktestComparison",
     "PromptLog",
+    "ResearchFinding",
+    "ResearchFindingSeverity",
+    "ResearchHarnessCycle",
     "PortfolioExposure",
     "PortfolioRiskFinding",
     "PortfolioRiskLimits",
@@ -163,6 +174,9 @@ __all__ = [
     "ResearchDesignDraft",
     "ResearchThesis",
     "ResearchAssetIndexEntry",
+    "ResearchTask",
+    "ResearchTaskStatus",
+    "ResearchTaskType",
     "ResourceBudgetReport",
     "RiskAuditResult",
     "RiskFinding",
