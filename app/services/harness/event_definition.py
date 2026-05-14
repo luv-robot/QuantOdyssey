@@ -355,6 +355,7 @@ def run_failed_breakout_event_definition_sensitivity(
     )
     completed = 0
     trials: list[FailedBreakoutSensitivityTrial] = []
+    base_scan_cache: dict[tuple[str, str, int, int], list[dict]] = {}
     for side in normalized_sides:
         for level_source in normalized_sources:
             for lookback in level_lookback_bars:
@@ -367,14 +368,19 @@ def run_failed_breakout_event_definition_sensitivity(
                                     if completed > max_trials:
                                         data_warnings.append(f"trial_grid_truncated_at_{max_trials}")
                                         break
-                                    event_scan = _failed_breakout_event_scan(
-                                        sorted_candles,
-                                        side=side,
-                                        level_source=level_source,
-                                        level_lookback_bars=lookback,
+                                    cache_key = (side, level_source, lookback, acceptance_window)
+                                    if cache_key not in base_scan_cache:
+                                        base_scan_cache[cache_key] = _failed_breakout_base_scan(
+                                            sorted_candles,
+                                            side=side,
+                                            level_source=level_source,
+                                            level_lookback_bars=lookback,
+                                            acceptance_window_bars=acceptance_window,
+                                        )
+                                    event_scan = _failed_breakout_event_scan_from_base(
+                                        base_scan_cache[cache_key],
                                         level_quality_threshold=level_quality_threshold,
                                         breakout_depth_bps=depth_bps,
-                                        acceptance_window_bars=acceptance_window,
                                         acceptance_failure_threshold=acceptance_failure_threshold,
                                         volume_zscore_threshold=volume_threshold,
                                     )
@@ -904,16 +910,31 @@ def _failed_breakout_event_scan(
     acceptance_failure_threshold: float,
     volume_zscore_threshold: float,
 ) -> dict:
-    funnel = {
-        "candidate_level_count": 0,
-        "quality_pass_count": 0,
-        "breakout_count": 0,
-        "return_inside_count": 0,
-        "acceptance_failure_count": 0,
-        "confirmation_count": 0,
-        "event_count": 0,
-    }
-    events_by_index: dict[int, dict] = {}
+    base_candidates = _failed_breakout_base_scan(
+        candles,
+        side=side,
+        level_source=level_source,
+        level_lookback_bars=level_lookback_bars,
+        acceptance_window_bars=acceptance_window_bars,
+    )
+    return _failed_breakout_event_scan_from_base(
+        base_candidates,
+        level_quality_threshold=level_quality_threshold,
+        breakout_depth_bps=breakout_depth_bps,
+        acceptance_failure_threshold=acceptance_failure_threshold,
+        volume_zscore_threshold=volume_zscore_threshold,
+    )
+
+
+def _failed_breakout_base_scan(
+    candles: list[OhlcvCandle],
+    *,
+    side: str,
+    level_source: str,
+    level_lookback_bars: int,
+    acceptance_window_bars: int,
+) -> list[dict]:
+    base_candidates: list[dict] = []
     start = level_lookback_bars + acceptance_window_bars
     for index in range(start, len(candles)):
         level_window_start = index - acceptance_window_bars - level_lookback_bars + 1
@@ -930,53 +951,84 @@ def _failed_breakout_event_scan(
             level_window=level_window,
             recent_window=recent_window,
         )
-        funnel["candidate_level_count"] += len(candidate_levels)
         for candidate in candidate_levels:
             level = float(candidate["level"])
-            quality_score = float(candidate["level_quality_score"])
-            candidate_source = str(candidate["level_source"])
-            if quality_score < level_quality_threshold:
-                continue
-            funnel["quality_pass_count"] += 1
             if side == "short":
-                breakout_price = level * (1 + breakout_depth_bps / 10000)
-                broke_out = max(item.high for item in recent_window) >= breakout_price
+                max_breakout_depth_bps = max(0.0, (max(item.high for item in recent_window) / level - 1) * 10000)
                 returned_inside = candles[index].close < level
             else:
-                breakdown_price = level * (1 - breakout_depth_bps / 10000)
-                broke_out = min(item.low for item in recent_window) <= breakdown_price
+                max_breakout_depth_bps = max(0.0, (1 - min(item.low for item in recent_window) / level) * 10000)
                 returned_inside = candles[index].close > level
-            if not broke_out:
-                continue
-            funnel["breakout_count"] += 1
-            if not returned_inside:
-                continue
-            funnel["return_inside_count"] += 1
-            acceptance_failure_score = _acceptance_failure_score(
-                recent_window,
-                level=level,
-                side=side,
+            base_candidates.append(
+                {
+                    "index": index,
+                    "level": level,
+                    "level_source": str(candidate["level_source"]),
+                    "level_quality_score": float(candidate["level_quality_score"]),
+                    "max_breakout_depth_bps": max_breakout_depth_bps,
+                    "returned_inside": returned_inside,
+                    "acceptance_failure_score": _acceptance_failure_score(
+                        recent_window,
+                        level=level,
+                        side=side,
+                    ),
+                    "volume_zscore": _volume_zscore(candles, index),
+                }
             )
-            if acceptance_failure_score < acceptance_failure_threshold:
-                continue
-            funnel["acceptance_failure_count"] += 1
-            volume_score = _volume_zscore(candles, index)
-            if volume_zscore_threshold > 0 and volume_score < volume_zscore_threshold:
-                continue
-            funnel["confirmation_count"] += 1
-            event = {
-                "index": index,
-                "level": level,
-                "level_source": candidate_source,
-                "level_quality_score": quality_score,
-                "acceptance_failure_score": acceptance_failure_score,
-                "volume_zscore": volume_score,
-            }
-            current = events_by_index.get(index)
-            current_score = -1 if current is None else float(current["level_quality_score"]) + float(current["acceptance_failure_score"])
-            event_score = quality_score + acceptance_failure_score
-            if event_score > current_score:
-                events_by_index[index] = event
+    return base_candidates
+
+
+def _failed_breakout_event_scan_from_base(
+    base_candidates: list[dict],
+    *,
+    level_quality_threshold: float,
+    breakout_depth_bps: float,
+    acceptance_failure_threshold: float,
+    volume_zscore_threshold: float,
+) -> dict:
+    funnel = {
+        "candidate_level_count": 0,
+        "quality_pass_count": 0,
+        "breakout_count": 0,
+        "return_inside_count": 0,
+        "acceptance_failure_count": 0,
+        "confirmation_count": 0,
+        "event_count": 0,
+    }
+    events_by_index: dict[int, dict] = {}
+    funnel["candidate_level_count"] = len(base_candidates)
+    for candidate in base_candidates:
+        quality_score = float(candidate["level_quality_score"])
+        if quality_score < level_quality_threshold:
+            continue
+        funnel["quality_pass_count"] += 1
+        if float(candidate["max_breakout_depth_bps"]) < breakout_depth_bps:
+            continue
+        funnel["breakout_count"] += 1
+        if not bool(candidate["returned_inside"]):
+            continue
+        funnel["return_inside_count"] += 1
+        acceptance_failure_score = float(candidate["acceptance_failure_score"])
+        if acceptance_failure_score < acceptance_failure_threshold:
+            continue
+        funnel["acceptance_failure_count"] += 1
+        volume_score = float(candidate["volume_zscore"])
+        if volume_zscore_threshold > 0 and volume_score < volume_zscore_threshold:
+            continue
+        funnel["confirmation_count"] += 1
+        event = {
+            "index": int(candidate["index"]),
+            "level": float(candidate["level"]),
+            "level_source": str(candidate["level_source"]),
+            "level_quality_score": quality_score,
+            "acceptance_failure_score": acceptance_failure_score,
+            "volume_zscore": volume_score,
+        }
+        current = events_by_index.get(int(candidate["index"]))
+        current_score = -1 if current is None else float(current["level_quality_score"]) + float(current["acceptance_failure_score"])
+        event_score = quality_score + acceptance_failure_score
+        if event_score > current_score:
+            events_by_index[int(candidate["index"])] = event
     events = [events_by_index[index] for index in sorted(events_by_index)]
     level_source_counts: dict[str, int] = {}
     for event in events:
