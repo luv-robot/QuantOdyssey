@@ -36,6 +36,9 @@ Current free data capability:
 
 - Local Freqtrade spot and futures OHLCV coverage is preflighted before a real backtest starts.
 - Freqtrade futures funding-rate feather files can be imported as historical funding evidence.
+- Funding Crowding Fade has a first traceable event builder that derives funding percentile,
+  failed-breakout state, VWAP distance, setup score, trigger score, and missing OI evidence from
+  Freqtrade futures OHLCV + funding files.
 - Binance public endpoints cover spot/futures klines, funding rate, current open interest,
   historical open interest, and spot/futures orderbook snapshots.
 - Quality reports can flag missing candles, non-positive price/volume, invalid orderbooks, and

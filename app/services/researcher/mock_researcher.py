@@ -45,7 +45,7 @@ def _build_funding_crowding_fade_short_code(
     roi = '{"0": 0.035, "60": 0.018, "240": 0}' if refined else '{"0": 0.04, "90": 0.02, "360": 0}'
     funding_threshold = "92" if refined else "90"
     oi_threshold = "78" if refined else "75"
-    return f'''from freqtrade.strategy import IStrategy
+    return f'''from freqtrade.strategy import IStrategy, informative
 from pandas import DataFrame
 import talib.abstract as ta
 
@@ -56,6 +56,17 @@ class {strategy_name}(IStrategy):
     minimal_roi = {roi}
     can_short = True
 
+    @informative("1h", candle_type="funding_rate")
+    def populate_indicators_funding_1h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe["funding_rate"] = dataframe["open"]
+        dataframe["funding_percentile_30d"] = (
+            dataframe["funding_rate"]
+            .rolling(90, min_periods=30)
+            .rank(pct=True)
+            * 100
+        )
+        return dataframe
+
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
         dataframe["volume_mean"] = dataframe["volume"].rolling(48).mean()
@@ -65,8 +76,16 @@ class {strategy_name}(IStrategy):
             / dataframe["volume"].rolling(288).sum()
         )
         dataframe["price_change_24h"] = dataframe["close"] / dataframe["close"].shift(288) - 1
-        dataframe["funding_percentile_30d"] = dataframe.get("funding_percentile_30d", 50)
-        dataframe["open_interest_percentile_30d"] = dataframe.get("open_interest_percentile_30d", 50)
+        if "funding_percentile_30d_1h" in dataframe:
+            dataframe["funding_percentile_30d"] = dataframe["funding_percentile_30d_1h"].fillna(50)
+        else:
+            dataframe["funding_percentile_30d"] = 50
+        dataframe["open_interest_percentile_30d"] = (
+            dataframe["volume"]
+            .rolling(288, min_periods=48)
+            .rank(pct=True)
+            * 100
+        ).fillna(50)
         dataframe["recent_high_3"] = dataframe["high"].rolling(3).max()
         dataframe["failed_breakout_3bar"] = (
             (dataframe["recent_high_3"] > dataframe["range_high"])
