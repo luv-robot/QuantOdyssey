@@ -16,6 +16,51 @@ All agents MUST follow this specification.
 
 ---
 
+# Codex Cloud Quickstart
+
+Cloud agents working on this repository should use Python 3.11.
+
+Setup:
+
+```bash
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+Verification:
+
+```bash
+python -m pytest
+```
+
+Current expected result:
+
+```text
+87 passed
+```
+
+Do not commit generated runtime data:
+
+```text
+.venv/
+.venv311/
+.tools/
+logs/
+schemas/
+*.sqlite3
+freqtrade_user_data/data/
+freqtrade_user_data/backtest_results/
+freqtrade_user_data/strategies/*.py
+```
+
+Use `codex/*` branches for cloud-agent work. Do not push directly to `main` unless the user
+explicitly asks. All PRs should pass GitHub Actions CI before deployment.
+
+See [docs/cloud_development.md](docs/cloud_development.md) for the full cloud and multi-agent
+workflow.
+
+---
+
 # Core Principles
 
 ## 1. Agents Are Specialized
