@@ -39,6 +39,12 @@ def main() -> int:
     parser.add_argument("--horizon-hours", type=int, default=2)
     parser.add_argument("--min-trade-count", type=int, default=50)
     parser.add_argument("--min-market-confirmations", type=int, default=2)
+    parser.add_argument(
+        "--max-candles",
+        type=int,
+        default=20000,
+        help="Limit each OHLCV cell to the most recent N candles; use 0 for full history.",
+    )
     parser.add_argument("--max-trials", type=int, default=200)
     parser.add_argument("--save", action="store_true")
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL", "sqlite+pysqlite:///market_data.sqlite3"))
@@ -60,6 +66,8 @@ def main() -> int:
                 skipped_cells.append(f"{symbol}:{timeframe}:missing_ohlcv")
                 continue
             candles = load_freqtrade_ohlcv(ohlcv_file, symbol, timeframe)
+            if args.max_candles > 0 and len(candles) > args.max_candles:
+                candles = candles[-args.max_candles :]
             report = run_failed_breakout_event_definition_sensitivity(
                 task=task,
                 candles=candles,
