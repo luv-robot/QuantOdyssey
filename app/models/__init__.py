@@ -4,6 +4,7 @@ from app.models.backtest import (
     MonteCarloBacktestConfig,
     MonteCarloBacktestReport,
 )
+from app.models.arena import ArenaScoreComponent, ArenaScoreReport
 from app.models.backtest_validation import BacktestValidationReport
 from app.models.baseline import BaselineComparisonReport, BaselineResult
 from app.models.experiment import ExperimentManifest
@@ -98,6 +99,8 @@ from app.models.workflow import WorkflowRun, WorkflowState
 __all__ = [
     "BacktestReport",
     "BacktestStatus",
+    "ArenaScoreComponent",
+    "ArenaScoreReport",
     "BacktestValidationReport",
     "BaselineComparisonReport",
     "BaselineResult",

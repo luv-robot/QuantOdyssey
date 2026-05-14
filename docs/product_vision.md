@@ -318,8 +318,26 @@ Users can learn from rankings, failure cases, and anonymized patterns.
 
 Arena should not be a naive leaderboard based only on total return.
 
-Arena scoring is intentionally not finalized yet. The near-term requirement is to preserve enough
-objective evaluation data to support future scoring research.
+Arena V0.1 scoring follows this initial priority:
+
+```text
+Return Quality              35%
+Robustness                  30%
+  sample adequacy           12%
+  drawdown stability        18%
+Reproducibility             20%
+Explainability              10%
+Overfitting risk            penalty, not a primary reward dimension
+```
+
+This is a public comparison score, not an investment-readiness score. Private ReviewSession
+commentary remains private. Arena should expose objective metrics, strategy type, system-inferred
+classification, and clearly labeled caveats.
+
+Overfitting risk should work as a deduction because it can invalidate otherwise attractive
+results. The first implementation caps the overfit penalty at 25 points and is driven by
+out-of-sample failure, sensitivity failure, low sample count, explicit overfit detection, and weak
+statistical confidence.
 
 It should compare strategies by:
 
