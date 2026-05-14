@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timezone
 from statistics import mean, pstdev
 
 from app.models import (
@@ -329,11 +330,18 @@ def _precompute_event_features(
     oi_window: list[float] = []
     bars_24h = _bars_for_duration(candles[0].interval, hours=24)
     for index, candle in enumerate(candles):
-        while funding_index < len(funding_rates) and funding_rates[funding_index].funding_time <= candle.open_time:
+        candle_timestamp = _datetime_seconds(candle.open_time)
+        while (
+            funding_index < len(funding_rates)
+            and _datetime_seconds(funding_rates[funding_index].funding_time) <= candle_timestamp
+        ):
             funding_window.append(funding_rates[funding_index].funding_rate)
             funding_index += 1
         if open_interest_points:
-            while oi_index < len(open_interest_points) and open_interest_points[oi_index].timestamp <= candle.open_time:
+            while (
+                oi_index < len(open_interest_points)
+                and _datetime_seconds(open_interest_points[oi_index].timestamp) <= candle_timestamp
+            ):
                 oi_window.append(open_interest_points[oi_index].open_interest)
                 oi_index += 1
         funding_percentile = (
@@ -439,6 +447,12 @@ def _latest_percentile(values: list[float], latest: float) -> float:
     if not values:
         return 50.0
     return sum(1 for value in values if value <= latest) / len(values) * 100
+
+
+def _datetime_seconds(value) -> float:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
 
 
 def _bars_for_duration(timeframe: str, hours: int) -> int:

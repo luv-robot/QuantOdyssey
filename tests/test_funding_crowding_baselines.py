@@ -1,6 +1,14 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from app.models import BacktestReport, BacktestStatus, FundingRatePoint, MarketSignal, OhlcvCandle, SignalType
+from app.models import (
+    BacktestReport,
+    BacktestStatus,
+    FundingRatePoint,
+    MarketSignal,
+    OhlcvCandle,
+    OpenInterestPoint,
+    SignalType,
+)
 from app.services.backtester import compare_to_event_level_baselines, compare_to_proxy_baselines
 
 
@@ -84,8 +92,46 @@ def test_funding_signal_gets_event_level_baselines_when_market_data_is_available
     assert any("event-level baseline" in finding for finding in report.findings)
 
 
-def _event_candles(count: int = 180) -> list[OhlcvCandle]:
-    start = datetime(2026, 5, 1)
+def test_event_baselines_tolerate_mixed_datetime_awareness() -> None:
+    signal = MarketSignal(
+        signal_id="signal_funding_event_timezones",
+        created_at=datetime.utcnow(),
+        exchange="binance",
+        symbol="BTC/USDT:USDT",
+        timeframe="5m",
+        signal_type=SignalType.FUNDING_OI_EXTREME,
+        rank_score=88,
+        features={},
+        hypothesis="funding crowding with historical open interest",
+        data_sources=["ohlcv", "funding", "oi"],
+    )
+    backtest = BacktestReport(
+        backtest_id="bt_funding_timezones",
+        strategy_id="strategy_funding_timezones",
+        timerange="20240101-20260501",
+        trades=120,
+        win_rate=0.58,
+        profit_factor=1.6,
+        sharpe=1.2,
+        max_drawdown=-0.07,
+        total_return=0.18,
+        status=BacktestStatus.PASSED,
+    )
+
+    report = compare_to_event_level_baselines(
+        signal,
+        backtest,
+        candles=_event_candles(aware=True),
+        funding_rates=_event_funding_rates(aware=True),
+        open_interest_points=_event_open_interest_points(),
+    )
+
+    assert any(item.name == "funding_plus_oi_event" for item in report.baselines)
+    assert any("historical open-interest" in finding for finding in report.findings)
+
+
+def _event_candles(count: int = 180, *, aware: bool = False) -> list[OhlcvCandle]:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc) if aware else datetime(2026, 5, 1)
     candles = []
     for index in range(count):
         open_time = start + timedelta(minutes=5 * index)
@@ -116,14 +162,27 @@ def _event_candles(count: int = 180) -> list[OhlcvCandle]:
     return candles
 
 
-def _event_funding_rates(count: int = 180) -> list[FundingRatePoint]:
-    start = datetime(2026, 5, 1)
+def _event_funding_rates(count: int = 180, *, aware: bool = False) -> list[FundingRatePoint]:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc) if aware else datetime(2026, 5, 1)
     return [
         FundingRatePoint(
             symbol="BTC/USDT:USDT",
             funding_time=start + timedelta(minutes=5 * index),
             funding_rate=0.00001 + index * 0.000001,
             mark_price=None,
+            raw={},
+        )
+        for index in range(count)
+    ]
+
+
+def _event_open_interest_points(count: int = 180) -> list[OpenInterestPoint]:
+    start = datetime(2026, 5, 1)
+    return [
+        OpenInterestPoint(
+            symbol="BTC/USDT:USDT",
+            timestamp=start + timedelta(minutes=5 * index),
+            open_interest=1000 + index,
             raw={},
         )
         for index in range(count)
