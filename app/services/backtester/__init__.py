@@ -1,13 +1,16 @@
 from app.services.backtester.baselines import compare_to_proxy_baselines
 from app.services.backtester.freqtrade_cli import (
     build_backtest_command,
+    build_backtest_preflight,
     extract_freqtrade_trades,
     find_latest_backtest_result,
+    load_freqtrade_trading_mode,
     load_freqtrade_result,
     parse_freqtrade_result_json,
     parse_strategy_name,
     run_freqtrade_backtest,
     run_freqtrade_command,
+    strategy_allows_short,
 )
 from app.services.backtester.monte_carlo import (
     estimate_monte_carlo_cost,
@@ -21,9 +24,11 @@ from app.services.backtester.validation_suite import run_cross_symbol_validation
 
 __all__ = [
     "build_backtest_command",
+    "build_backtest_preflight",
     "compare_to_proxy_baselines",
     "extract_freqtrade_trades",
     "find_latest_backtest_result",
+    "load_freqtrade_trading_mode",
     "load_freqtrade_result",
     "estimate_monte_carlo_cost",
     "evaluate_robustness",
@@ -31,6 +36,7 @@ __all__ = [
     "parse_strategy_name",
     "run_freqtrade_backtest",
     "run_freqtrade_command",
+    "strategy_allows_short",
     "run_monte_carlo_backtest",
     "run_trade_bootstrap_monte_carlo",
     "run_mock_backtest",

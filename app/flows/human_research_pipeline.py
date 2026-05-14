@@ -507,11 +507,14 @@ def _run_backtest(
         manifest,
         timerange=os.getenv("FREQTRADE_BACKTEST_TIMERANGE", "20240101-20260501"),
         config_path=config_path,
+        futures_config_path=Path(
+            os.getenv("FREQTRADE_FUTURES_CONFIG", "configs/freqtrade_futures_config.json")
+        ),
         userdir=Path(os.getenv("FREQTRADE_USER_DATA", "freqtrade_user_data")),
         timeout_seconds=int(os.getenv("FREQTRADE_BACKTEST_TIMEOUT", "600")),
     )
     metadata["backtest_mode"] = "real"
-    metadata["config_path"] = str(config_path)
+    metadata["config_path"] = metadata.get("config_path") or str(config_path)
     return backtest, trades, metadata
 
 

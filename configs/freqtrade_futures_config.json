@@ -1,0 +1,51 @@
+{
+  "dry_run": true,
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "stake_currency": "USDT",
+  "stake_amount": 100,
+  "dry_run_wallet": 1000,
+  "max_open_trades": 1,
+  "timeframe": "5m",
+  "dataformat_ohlcv": "feather",
+  "dataformat_trades": "feather",
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "ccxt_config": {
+      "options": {
+        "defaultType": "swap",
+        "fetchMarkets": ["linear"]
+      }
+    },
+    "ccxt_async_config": {
+      "options": {
+        "defaultType": "swap",
+        "fetchMarkets": ["linear"]
+      }
+    },
+    "pair_whitelist": ["BTC/USDT:USDT"],
+    "pair_blacklist": []
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0.0,
+    "check_depth_of_market": {
+      "enabled": false,
+      "bids_to_ask_delta": 1
+    }
+  },
+  "exit_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1
+  }
+}
