@@ -27,6 +27,12 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
+If package-index access is blocked in Codex Cloud, use the no-build-isolation fallback:
+
+```bash
+pip install --no-build-isolation -e ".[dev]"
+```
+
 Verification:
 
 ```bash

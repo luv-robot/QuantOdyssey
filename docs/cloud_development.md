@@ -29,6 +29,24 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
+Codex Cloud may run behind a restricted package-index proxy. If the editable install fails while
+fetching build dependencies such as `setuptools`, try the fallback below. It uses the environment's
+already-installed build backend instead of creating an isolated build environment.
+
+```bash
+pip install --no-build-isolation -e ".[dev]"
+```
+
+If both commands fail, run the diagnostic block and report the output:
+
+```bash
+python -m pip --version
+python -m pip show setuptools wheel pytest pydantic sqlalchemy
+python -m pip config list -v
+env | sort | grep -E 'PIP|HTTP|HTTPS|ALL_PROXY|NO_PROXY'
+python -m pip install --dry-run "setuptools>=68"
+```
+
 Verify:
 
 ```bash
@@ -71,6 +89,10 @@ python -m pytest
 ```
 
 CI must pass before deploying to the VPS.
+
+CI is the source of truth for dependency installation. If Codex Cloud can run tests but cannot
+install because of package-index restrictions, treat it as a cloud environment issue, not a failed
+project build, as long as GitHub Actions remains green.
 
 ## Branch Rules
 
@@ -183,4 +205,3 @@ Run human-led pipeline tests:
 ```bash
 python -m pytest tests/test_human_research_pipeline.py
 ```
-
