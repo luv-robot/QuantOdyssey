@@ -16,6 +16,10 @@ from sqlalchemy.exc import SQLAlchemyError
 DEFAULT_TABLES = (
     "research_theses",
     "signals",
+    "research_findings",
+    "research_tasks",
+    "research_harness_cycles",
+    "event_definition_sensitivity_reports",
     "strategy_registry",
     "backtests",
     "monte_carlo_backtests",
