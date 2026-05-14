@@ -318,6 +318,30 @@ def render_research_run_detail(engine) -> None:
                     if review.get("failure_reason"):
                         st.error(review["failure_reason"])
                     st.json(review)
+            review_sessions = _records_where_payload_field(
+                engine,
+                "review_sessions",
+                "strategy_id",
+                strategy_id,
+            )
+            if review_sessions:
+                st.write("**Review Session**")
+                for review_session in review_sessions:
+                    maturity_score = review_session.get("maturity_score") or {}
+                    if maturity_score:
+                        st.metric("Maturity Score", f"{maturity_score.get('overall_score', 0):.2f}")
+                    st.write("**Scorecard**")
+                    st.json(review_session.get("scorecard") or {})
+                    st.write("**Evidence For**")
+                    st.json(review_session.get("evidence_for") or [])
+                    st.write("**Evidence Against**")
+                    st.json(review_session.get("evidence_against") or [])
+                    st.write("**Blind Spots**")
+                    st.json(review_session.get("blind_spots") or [])
+                    st.write("**AI Questions**")
+                    st.json(review_session.get("ai_questions") or [])
+                    st.write("**Next Experiments**")
+                    st.json(review_session.get("next_experiments") or [])
 
 
 def _records_where_payload_field(engine, table_name: str, field: str, value: str) -> list[dict]:

@@ -24,6 +24,7 @@ from app.models import (
     ResourceBudgetReport,
     RealBacktestValidationSuiteReport,
     CrossSymbolValidationReport,
+    ReviewSession,
     RobustnessReport,
     RiskAuditResult,
     StrategyCandidate,
@@ -67,6 +68,7 @@ from app.services.reviewer import (
     build_enhanced_review_metrics,
     build_negative_result_case,
     build_review_case,
+    build_review_session,
     summarize_trades,
 )
 from app.services.risk_auditor import audit_strategy_code
@@ -103,6 +105,7 @@ class HumanResearchPipelineResult(BaseModel):
     event_episode: EventEpisode
     ranking: CandidateRankingResult
     candidates: list[CandidateResearchResult]
+    review_sessions: list[ReviewSession]
     selected_candidate_id: str | None = None
     paper_trading_plan: PaperTradingPlan | None = None
     final_status: ThesisStatus
@@ -142,6 +145,7 @@ def run_human_research_pipeline(
     ranking = rank_strategy_candidates(signal, candidates)
     store = review_store or InMemoryReviewStore()
     results: list[CandidateResearchResult] = []
+    review_sessions: list[ReviewSession] = []
 
     for candidate in ranking.candidates:
         manifest = candidate.manifest
@@ -299,6 +303,17 @@ def run_human_research_pipeline(
 
         review = store.add(build_review_case(signal, manifest, risk_audit, backtest))
         repository.save_review(review)
+        review_session = build_review_session(
+            pre_review=pre_review,
+            research_design=research_design,
+            event_episode=event_episode,
+            backtest=backtest,
+            baseline=baseline_comparison,
+            robustness=robustness_report,
+            review_case=review,
+        )
+        repository.save_review_session(review_session)
+        review_sessions.append(review_session)
         repository.save_research_asset_index_entry(
             build_research_asset_index_entry(
                 thesis=thesis,
@@ -367,6 +382,7 @@ def run_human_research_pipeline(
         event_episode=event_episode,
         ranking=ranking.model_copy(update={"selected_candidate_id": selected_candidate_id}),
         candidates=results,
+        review_sessions=review_sessions,
         selected_candidate_id=selected_candidate_id,
         paper_trading_plan=paper_trading_plan,
         final_status=final_status,
