@@ -9,6 +9,10 @@ from app.models import (
     EventDefinitionSensitivityTrial,
     EventDefinitionUniverseCell,
     EventDefinitionUniverseReport,
+    FailedBreakoutSensitivityReport,
+    FailedBreakoutSensitivityTrial,
+    FailedBreakoutUniverseCell,
+    FailedBreakoutUniverseReport,
     FundingRatePoint,
     OhlcvCandle,
     OpenInterestPoint,
@@ -222,6 +226,218 @@ def run_funding_crowding_event_definition_sensitivity(
         funding_only_total_return=round(funding_only_stats["total_return"], 6),
         funding_only_profit_factor=round(funding_only_stats["profit_factor"], 6),
         funding_only_trade_count=len(funding_only_returns),
+        best_trial=best_trial,
+        robust_trial_count=robust_trial_count,
+        min_trade_count=min_trade_count,
+        trials=trials,
+        data_warnings=list(dict.fromkeys(data_warnings)),
+        findings=findings,
+    )
+
+
+def build_failed_breakout_universe_report(
+    *,
+    task: ResearchTask | None,
+    reports: list[FailedBreakoutSensitivityReport],
+    skipped_cells: list[str] | None = None,
+    min_market_confirmations: int = 2,
+    min_trade_count: int = 50,
+) -> FailedBreakoutUniverseReport:
+    """Aggregate Failed Breakout event-definition reports across markets and timeframes."""
+    skipped_cells = skipped_cells or []
+    cells = [_failed_breakout_cell_from_report(report) for report in reports]
+    robust_counts: dict[str, int] = {}
+    best_counts: dict[str, int] = {}
+    for report in reports:
+        if report.best_trial is not None:
+            best_counts[report.best_trial.trial_id] = best_counts.get(report.best_trial.trial_id, 0) + 1
+        for trial in report.trials:
+            if (
+                trial.trade_count >= min_trade_count
+                and trial.total_return > 0
+                and trial.profit_factor > 1
+                and trial.beats_simple_failed_breakout
+            ):
+                robust_counts[trial.trial_id] = robust_counts.get(trial.trial_id, 0) + 1
+    robust_trial_ids = sorted(
+        [trial_id for trial_id, count in robust_counts.items() if count >= min_market_confirmations]
+    )
+    symbols = sorted({report.symbol for report in reports})
+    timeframes = sorted({report.timeframe for report in reports})
+    findings = _failed_breakout_universe_findings(
+        reports=reports,
+        cells=cells,
+        skipped_cells=skipped_cells,
+        robust_trial_ids=robust_trial_ids,
+        robust_counts=robust_counts,
+        best_counts=best_counts,
+        min_market_confirmations=min_market_confirmations,
+    )
+    return FailedBreakoutUniverseReport(
+        report_id=f"failed_breakout_universe_{uuid4().hex[:8]}",
+        task_id=None if task is None else task.task_id,
+        thesis_id=None if task is None else task.thesis_id,
+        signal_id=None if task is None else task.signal_id,
+        strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+        symbols=symbols,
+        timeframes=timeframes,
+        completed_cells=len(reports),
+        skipped_cells=skipped_cells,
+        min_market_confirmations=min_market_confirmations,
+        robust_trial_ids=robust_trial_ids,
+        best_trial_frequency=dict(sorted(best_counts.items(), key=lambda item: (-item[1], item[0]))),
+        cells=cells,
+        child_report_ids=[report.report_id for report in reports],
+        findings=findings,
+    )
+
+
+def run_failed_breakout_event_definition_sensitivity(
+    *,
+    task: ResearchTask | None,
+    candles: list[OhlcvCandle],
+    symbol: str,
+    timeframe: str,
+    sides: tuple[str, ...] = ("short",),
+    level_lookback_bars: tuple[int, ...] = (48, 96, 192),
+    breakout_depth_bps: tuple[float, ...] = (10, 25, 50),
+    acceptance_window_bars: tuple[int, ...] = (3, 6, 10),
+    volume_zscore_thresholds: tuple[float, ...] = (0, 1, 1.5, 2),
+    horizon_hours: int = 2,
+    min_trade_count: int = 50,
+    fee_rate: float = 0.001,
+    max_trials: int = 200,
+) -> FailedBreakoutSensitivityReport:
+    """Run a bounded OHLCV-only event-definition grid for Failed Breakout Punishment."""
+    sorted_candles = sorted(candles, key=lambda item: item.open_time)
+    data_warnings: list[str] = []
+    normalized_sides = tuple(dict.fromkeys(side.lower() for side in sides if side.lower() in {"short", "long"}))
+    if not normalized_sides:
+        normalized_sides = ("short",)
+        data_warnings.append("invalid_side_defaulted_to_short")
+    if len(sorted_candles) < max(level_lookback_bars) + max(acceptance_window_bars) + 30:
+        data_warnings.append("limited_ohlcv_history_for_failed_breakout_scan")
+
+    horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    baseline_returns = _simulate_failed_breakout_returns(
+        sorted_candles,
+        sides=normalized_sides,
+        level_lookback_bars=96,
+        breakout_depth_bps=10,
+        acceptance_window_bars=6,
+        volume_zscore_threshold=0,
+        horizon_bars=horizon_bars,
+        fee_rate=fee_rate,
+    )
+    baseline_stats = _stats_from_returns(baseline_returns)
+
+    search_budget = (
+        len(normalized_sides)
+        * len(level_lookback_bars)
+        * len(breakout_depth_bps)
+        * len(acceptance_window_bars)
+        * len(volume_zscore_thresholds)
+    )
+    completed = 0
+    trials: list[FailedBreakoutSensitivityTrial] = []
+    for side in normalized_sides:
+        for lookback in level_lookback_bars:
+            for depth_bps in breakout_depth_bps:
+                for acceptance_window in acceptance_window_bars:
+                    for volume_threshold in volume_zscore_thresholds:
+                        completed += 1
+                        if completed > max_trials:
+                            data_warnings.append(f"trial_grid_truncated_at_{max_trials}")
+                            break
+                        events = _failed_breakout_event_indices(
+                            sorted_candles,
+                            side=side,
+                            level_lookback_bars=lookback,
+                            breakout_depth_bps=depth_bps,
+                            acceptance_window_bars=acceptance_window,
+                            volume_zscore_threshold=volume_threshold,
+                        )
+                        returns = _simulate_failed_breakout_returns(
+                            sorted_candles,
+                            sides=(side,),
+                            level_lookback_bars=lookback,
+                            breakout_depth_bps=depth_bps,
+                            acceptance_window_bars=acceptance_window,
+                            volume_zscore_threshold=volume_threshold,
+                            horizon_bars=horizon_bars,
+                            fee_rate=fee_rate,
+                        )
+                        stats = _stats_from_returns(returns)
+                        trials.append(
+                            FailedBreakoutSensitivityTrial(
+                                trial_id=(
+                                    f"trial_{side}"
+                                    f"_lb{lookback}"
+                                    f"_d{_fmt_threshold(depth_bps)}"
+                                    f"_aw{acceptance_window}"
+                                    f"_vz{_fmt_threshold(volume_threshold)}"
+                                ),
+                                side=side,
+                                level_lookback_bars=lookback,
+                                breakout_depth_bps=depth_bps,
+                                acceptance_window_bars=acceptance_window,
+                                volume_zscore_threshold=volume_threshold,
+                                event_count=len(events),
+                                trade_count=len(returns),
+                                average_return=round(stats["average_return"], 6),
+                                total_return=round(stats["total_return"], 6),
+                                profit_factor=round(stats["profit_factor"], 6),
+                                sharpe=stats["sharpe"],
+                                max_drawdown=round(stats["max_drawdown"], 6),
+                                beats_cash=stats["total_return"] > 0,
+                                beats_simple_failed_breakout=stats["total_return"] > baseline_stats["total_return"],
+                            )
+                        )
+                    else:
+                        continue
+                    break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+        else:
+            continue
+        break
+
+    best_trial = _select_best_failed_breakout_trial(trials, min_trade_count)
+    robust_trial_count = sum(
+        1
+        for trial in trials
+        if trial.trade_count >= min_trade_count
+        and trial.total_return > 0
+        and trial.profit_factor > 1
+        and trial.beats_simple_failed_breakout
+    )
+    findings = _failed_breakout_findings(
+        trials=trials,
+        best_trial=best_trial,
+        robust_trial_count=robust_trial_count,
+        min_trade_count=min_trade_count,
+        baseline_trade_count=len(baseline_returns),
+        data_warnings=data_warnings,
+    )
+    return FailedBreakoutSensitivityReport(
+        report_id=f"failed_breakout_{_safe_symbol(symbol)}_{uuid4().hex[:8]}",
+        task_id=None if task is None else task.task_id,
+        thesis_id=None if task is None else task.thesis_id,
+        signal_id=None if task is None else task.signal_id,
+        strategy_id=None if task is None else task.strategy_id,
+        strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon_hours=horizon_hours,
+        search_budget_trials=search_budget,
+        completed_trials=len(trials),
+        simple_failed_breakout_total_return=round(baseline_stats["total_return"], 6),
+        simple_failed_breakout_profit_factor=round(baseline_stats["profit_factor"], 6),
+        simple_failed_breakout_trade_count=len(baseline_returns),
         best_trial=best_trial,
         robust_trial_count=robust_trial_count,
         min_trade_count=min_trade_count,
@@ -470,6 +686,211 @@ def _findings(
         findings.append("No parameter neighborhood beat cash and funding-only with sufficient sample count.")
     elif robust_trial_count < 3:
         findings.append("Only a very small robust region was found; overfitting risk remains high.")
+    else:
+        findings.append(f"{robust_trial_count} trials passed the bounded robustness screen.")
+    return findings
+
+
+def _failed_breakout_cell_from_report(report: FailedBreakoutSensitivityReport) -> FailedBreakoutUniverseCell:
+    best = report.best_trial
+    return FailedBreakoutUniverseCell(
+        report_id=report.report_id,
+        symbol=report.symbol,
+        timeframe=report.timeframe,
+        completed_trials=report.completed_trials,
+        robust_trial_count=report.robust_trial_count,
+        simple_failed_breakout_total_return=report.simple_failed_breakout_total_return,
+        simple_failed_breakout_trade_count=report.simple_failed_breakout_trade_count,
+        best_trial_id=None if best is None else best.trial_id,
+        best_trial_trade_count=0 if best is None else best.trade_count,
+        best_trial_total_return=0 if best is None else best.total_return,
+        best_trial_profit_factor=0 if best is None else best.profit_factor,
+        best_trial_sharpe=None if best is None else best.sharpe,
+        data_warnings=report.data_warnings,
+    )
+
+
+def _failed_breakout_universe_findings(
+    *,
+    reports: list[FailedBreakoutSensitivityReport],
+    cells: list[FailedBreakoutUniverseCell],
+    skipped_cells: list[str],
+    robust_trial_ids: list[str],
+    robust_counts: dict[str, int],
+    best_counts: dict[str, int],
+    min_market_confirmations: int,
+) -> list[str]:
+    findings = [
+        f"Completed Failed Breakout universe scan over {len(reports)} market/timeframe cell(s).",
+    ]
+    if skipped_cells:
+        findings.append(f"Skipped {len(skipped_cells)} cell(s): {', '.join(skipped_cells)}.")
+    if not reports:
+        findings.append("No usable OHLCV cell was available for Failed Breakout Punishment.")
+        return findings
+    positive_best = sum(1 for cell in cells if cell.best_trial_total_return > 0)
+    sufficient_best = sum(1 for cell in cells if cell.best_trial_trade_count >= 50)
+    findings.append(
+        f"{positive_best}/{len(cells)} cell(s) had a positive best trial; "
+        f"{sufficient_best}/{len(cells)} best trials met the default 50-trade sample floor."
+    )
+    if robust_trial_ids:
+        counts = ", ".join(f"{trial_id}:{robust_counts[trial_id]}" for trial_id in robust_trial_ids)
+        findings.append(
+            f"Cross-market robust trial ids meeting {min_market_confirmations} confirmation(s): {counts}."
+        )
+    else:
+        findings.append(
+            f"No Failed Breakout trial id met cross-market robust confirmation threshold="
+            f"{min_market_confirmations}; use the best cells as event-definition leads only."
+        )
+    if best_counts:
+        top_best = next(iter(dict(sorted(best_counts.items(), key=lambda item: (-item[1], item[0]))).items()))
+        findings.append(f"Most frequent best trial was {top_best[0]} in {top_best[1]} cell(s).")
+    warnings = sorted({warning for report in reports for warning in report.data_warnings})
+    if warnings:
+        findings.append(f"Data warnings observed: {', '.join(warnings)}.")
+    return findings
+
+
+def _simulate_failed_breakout_returns(
+    candles: list[OhlcvCandle],
+    *,
+    sides: tuple[str, ...],
+    level_lookback_bars: int,
+    breakout_depth_bps: float,
+    acceptance_window_bars: int,
+    volume_zscore_threshold: float,
+    horizon_bars: int,
+    fee_rate: float,
+) -> list[float]:
+    events: list[tuple[int, str]] = []
+    for side in sides:
+        events.extend(
+            (index, side)
+            for index in _failed_breakout_event_indices(
+                candles,
+                side=side,
+                level_lookback_bars=level_lookback_bars,
+                breakout_depth_bps=breakout_depth_bps,
+                acceptance_window_bars=acceptance_window_bars,
+                volume_zscore_threshold=volume_zscore_threshold,
+            )
+        )
+    events.sort()
+    returns: list[float] = []
+    next_available_index = 0
+    for index, side in events:
+        if index < next_available_index or index + horizon_bars >= len(candles):
+            continue
+        entry = candles[index].close
+        exit_ = candles[index + horizon_bars].close
+        if entry <= 0 or exit_ <= 0:
+            continue
+        if side == "short":
+            returns.append(entry / exit_ - 1 - fee_rate)
+        else:
+            returns.append(exit_ / entry - 1 - fee_rate)
+        next_available_index = index + horizon_bars
+    return returns
+
+
+def _failed_breakout_event_indices(
+    candles: list[OhlcvCandle],
+    *,
+    side: str,
+    level_lookback_bars: int,
+    breakout_depth_bps: float,
+    acceptance_window_bars: int,
+    volume_zscore_threshold: float,
+) -> list[int]:
+    indices: list[int] = []
+    start = level_lookback_bars + acceptance_window_bars
+    for index in range(start, len(candles)):
+        level_window_start = index - acceptance_window_bars - level_lookback_bars + 1
+        level_window_end = index - acceptance_window_bars + 1
+        level_window = candles[level_window_start:level_window_end]
+        recent_window = candles[index - acceptance_window_bars + 1 : index + 1]
+        if len(level_window) < level_lookback_bars or len(recent_window) < acceptance_window_bars:
+            continue
+        if volume_zscore_threshold > 0 and _volume_zscore(candles, index) < volume_zscore_threshold:
+            continue
+        if side == "short":
+            level = max(item.high for item in level_window)
+            breakout_price = level * (1 + breakout_depth_bps / 10000)
+            broke_out = max(item.high for item in recent_window) >= breakout_price
+            returned_inside = candles[index].close < level
+            if broke_out and returned_inside:
+                indices.append(index)
+        else:
+            level = min(item.low for item in level_window)
+            breakdown_price = level * (1 - breakout_depth_bps / 10000)
+            broke_out = min(item.low for item in recent_window) <= breakdown_price
+            returned_inside = candles[index].close > level
+            if broke_out and returned_inside:
+                indices.append(index)
+    return indices
+
+
+def _volume_zscore(candles: list[OhlcvCandle], index: int, lookback: int = 48) -> float:
+    if index < 2:
+        return 0.0
+    window = [item.volume for item in candles[max(0, index - lookback) : index]]
+    if len(window) < 2:
+        return 0.0
+    stdev = pstdev(window)
+    if stdev == 0:
+        return 0.0
+    return (candles[index].volume - mean(window)) / stdev
+
+
+def _select_best_failed_breakout_trial(
+    trials: list[FailedBreakoutSensitivityTrial],
+    min_trade_count: int,
+) -> FailedBreakoutSensitivityTrial | None:
+    candidates = [trial for trial in trials if trial.trade_count >= min_trade_count]
+    if not candidates:
+        candidates = [trial for trial in trials if trial.trade_count > 0]
+    return max(
+        candidates,
+        key=lambda item: (item.beats_simple_failed_breakout, item.total_return, item.profit_factor),
+        default=None,
+    )
+
+
+def _failed_breakout_findings(
+    *,
+    trials: list[FailedBreakoutSensitivityTrial],
+    best_trial: FailedBreakoutSensitivityTrial | None,
+    robust_trial_count: int,
+    min_trade_count: int,
+    baseline_trade_count: int,
+    data_warnings: list[str],
+) -> list[str]:
+    findings: list[str] = [
+        f"Completed {len(trials)} bounded Failed Breakout event-definition trial(s).",
+        f"Simple failed-breakout baseline produced {baseline_trade_count} non-overlapping trade(s).",
+    ]
+    if data_warnings:
+        findings.append(f"Data warnings: {', '.join(sorted(set(data_warnings)))}.")
+    if best_trial is None:
+        findings.append("No usable Failed Breakout trial was produced.")
+        return findings
+    findings.append(
+        "Best trial "
+        f"{best_trial.trial_id}: trades={best_trial.trade_count}, "
+        f"return={best_trial.total_return:.4f}, PF={best_trial.profit_factor:.2f}, "
+        f"Sharpe={best_trial.sharpe}."
+    )
+    if best_trial.trade_count < min_trade_count:
+        findings.append(
+            f"Best trial has only {best_trial.trade_count} trade(s), below min_trade_count={min_trade_count}; "
+            "do not move this template into optimizer yet."
+        )
+    if robust_trial_count == 0:
+        findings.append("No parameter neighborhood beat cash and simple failed-breakout baseline with sufficient sample count.")
+    elif robust_trial_count < 3:
+        findings.append("Only a narrow robust region was found; keep the scope limited before optimizer work.")
     else:
         findings.append(f"{robust_trial_count} trials passed the bounded robustness screen.")
     return findings

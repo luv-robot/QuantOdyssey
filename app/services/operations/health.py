@@ -21,6 +21,8 @@ DEFAULT_TABLES = (
     "research_harness_cycles",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
+    "failed_breakout_sensitivity_reports",
+    "failed_breakout_universe_reports",
     "strategy_registry",
     "backtests",
     "monte_carlo_backtests",

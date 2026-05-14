@@ -19,6 +19,8 @@ from app.models import (
     EventDefinitionUniverseReport,
     EventEpisode,
     ExperimentManifest,
+    FailedBreakoutSensitivityReport,
+    FailedBreakoutUniverseReport,
     ExperimentQueueItem,
     FundingRatePoint,
     MarketSignal,
@@ -352,6 +354,32 @@ class EventDefinitionSensitivityReportRecord(Base):
 
 class EventDefinitionUniverseReportRecord(Base):
     __tablename__ = "event_definition_universe_reports"
+
+    report_id = Column(String, primary_key=True)
+    task_id = Column(String, index=True)
+    signal_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FailedBreakoutSensitivityReportRecord(Base):
+    __tablename__ = "failed_breakout_sensitivity_reports"
+
+    report_id = Column(String, primary_key=True)
+    task_id = Column(String, index=True)
+    signal_id = Column(String, index=True)
+    strategy_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FailedBreakoutUniverseReportRecord(Base):
+    __tablename__ = "failed_breakout_universe_reports"
 
     report_id = Column(String, primary_key=True)
     task_id = Column(String, index=True)
@@ -1409,6 +1437,101 @@ class QuantRepository:
                 query = query.filter(EventDefinitionUniverseReportRecord.strategy_family == strategy_family)
             records = query.order_by(EventDefinitionUniverseReportRecord.created_at.desc()).limit(limit).all()
             return [_load(EventDefinitionUniverseReport, record.payload) for record in records]
+
+    def save_failed_breakout_sensitivity_report(
+        self,
+        report: FailedBreakoutSensitivityReport,
+    ) -> FailedBreakoutSensitivityReport:
+        with self._session() as session:
+            session.merge(
+                FailedBreakoutSensitivityReportRecord(
+                    report_id=report.report_id,
+                    task_id=report.task_id,
+                    signal_id=report.signal_id,
+                    strategy_id=report.strategy_id,
+                    thesis_id=report.thesis_id,
+                    strategy_family=report.strategy_family,
+                    symbol=report.symbol,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_failed_breakout_sensitivity_report(
+        self,
+        report_id: str,
+    ) -> Optional[FailedBreakoutSensitivityReport]:
+        record = self._get(FailedBreakoutSensitivityReportRecord, report_id)
+        return None if record is None else _load(FailedBreakoutSensitivityReport, record.payload)
+
+    def query_failed_breakout_sensitivity_reports(
+        self,
+        task_id: Optional[str] = None,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[FailedBreakoutSensitivityReport]:
+        with self._session() as session:
+            query = session.query(FailedBreakoutSensitivityReportRecord)
+            if task_id is not None:
+                query = query.filter(FailedBreakoutSensitivityReportRecord.task_id == task_id)
+            if thesis_id is not None:
+                query = query.filter(FailedBreakoutSensitivityReportRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(FailedBreakoutSensitivityReportRecord.signal_id == signal_id)
+            if strategy_family is not None:
+                query = query.filter(FailedBreakoutSensitivityReportRecord.strategy_family == strategy_family)
+            if symbol is not None:
+                query = query.filter(FailedBreakoutSensitivityReportRecord.symbol == symbol)
+            records = query.order_by(FailedBreakoutSensitivityReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(FailedBreakoutSensitivityReport, record.payload) for record in records]
+
+    def save_failed_breakout_universe_report(
+        self,
+        report: FailedBreakoutUniverseReport,
+    ) -> FailedBreakoutUniverseReport:
+        with self._session() as session:
+            session.merge(
+                FailedBreakoutUniverseReportRecord(
+                    report_id=report.report_id,
+                    task_id=report.task_id,
+                    signal_id=report.signal_id,
+                    thesis_id=report.thesis_id,
+                    strategy_family=report.strategy_family,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_failed_breakout_universe_report(
+        self,
+        report_id: str,
+    ) -> Optional[FailedBreakoutUniverseReport]:
+        record = self._get(FailedBreakoutUniverseReportRecord, report_id)
+        return None if record is None else _load(FailedBreakoutUniverseReport, record.payload)
+
+    def query_failed_breakout_universe_reports(
+        self,
+        task_id: Optional[str] = None,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[FailedBreakoutUniverseReport]:
+        with self._session() as session:
+            query = session.query(FailedBreakoutUniverseReportRecord)
+            if task_id is not None:
+                query = query.filter(FailedBreakoutUniverseReportRecord.task_id == task_id)
+            if thesis_id is not None:
+                query = query.filter(FailedBreakoutUniverseReportRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(FailedBreakoutUniverseReportRecord.signal_id == signal_id)
+            if strategy_family is not None:
+                query = query.filter(FailedBreakoutUniverseReportRecord.strategy_family == strategy_family)
+            records = query.order_by(FailedBreakoutUniverseReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(FailedBreakoutUniverseReport, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:

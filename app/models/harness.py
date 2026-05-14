@@ -177,3 +177,88 @@ class EventDefinitionUniverseReport(BaseModel):
     child_report_ids: list[str] = Field(default_factory=list)
     findings: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FailedBreakoutSensitivityTrial(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trial_id: str = Field(min_length=1)
+    side: str = Field(min_length=1)
+    level_lookback_bars: int = Field(ge=1)
+    breakout_depth_bps: float = Field(ge=0)
+    acceptance_window_bars: int = Field(ge=1)
+    volume_zscore_threshold: float = Field(ge=0)
+    event_count: int = Field(ge=0)
+    trade_count: int = Field(ge=0)
+    average_return: float
+    total_return: float
+    profit_factor: float
+    sharpe: float | None = None
+    max_drawdown: float
+    beats_cash: bool
+    beats_simple_failed_breakout: bool
+
+
+class FailedBreakoutSensitivityReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    task_id: str | None = None
+    thesis_id: str | None = None
+    signal_id: str | None = None
+    strategy_id: str | None = None
+    strategy_family: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    timeframe: str = Field(min_length=1)
+    horizon_hours: int = Field(ge=1)
+    search_budget_trials: int = Field(ge=0)
+    completed_trials: int = Field(ge=0)
+    simple_failed_breakout_total_return: float
+    simple_failed_breakout_profit_factor: float
+    simple_failed_breakout_trade_count: int = Field(ge=0)
+    best_trial: FailedBreakoutSensitivityTrial | None = None
+    robust_trial_count: int = Field(ge=0)
+    min_trade_count: int = Field(ge=1)
+    trials: list[FailedBreakoutSensitivityTrial] = Field(default_factory=list)
+    data_warnings: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FailedBreakoutUniverseCell(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    timeframe: str = Field(min_length=1)
+    completed_trials: int = Field(ge=0)
+    robust_trial_count: int = Field(ge=0)
+    simple_failed_breakout_total_return: float
+    simple_failed_breakout_trade_count: int = Field(ge=0)
+    best_trial_id: str | None = None
+    best_trial_trade_count: int = Field(default=0, ge=0)
+    best_trial_total_return: float = 0
+    best_trial_profit_factor: float = 0
+    best_trial_sharpe: float | None = None
+    data_warnings: list[str] = Field(default_factory=list)
+
+
+class FailedBreakoutUniverseReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    task_id: str | None = None
+    thesis_id: str | None = None
+    signal_id: str | None = None
+    strategy_family: str = Field(min_length=1)
+    symbols: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    completed_cells: int = Field(ge=0)
+    skipped_cells: list[str] = Field(default_factory=list)
+    min_market_confirmations: int = Field(ge=1)
+    robust_trial_ids: list[str] = Field(default_factory=list)
+    best_trial_frequency: dict[str, int] = Field(default_factory=dict)
+    cells: list[FailedBreakoutUniverseCell] = Field(default_factory=list)
+    child_report_ids: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

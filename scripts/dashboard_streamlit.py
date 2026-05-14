@@ -36,6 +36,8 @@ KEY_TABLES = [
     "research_harness_cycles",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
+    "failed_breakout_sensitivity_reports",
+    "failed_breakout_universe_reports",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -254,6 +256,20 @@ def render_research_run_detail(engine) -> None:
         thesis["thesis_id"],
         "Event Definition Universe Reports",
     )
+    _render_related_payloads(
+        engine,
+        "failed_breakout_sensitivity_reports",
+        "thesis_id",
+        thesis["thesis_id"],
+        "Failed Breakout Sensitivity Reports",
+    )
+    _render_related_payloads(
+        engine,
+        "failed_breakout_universe_reports",
+        "thesis_id",
+        thesis["thesis_id"],
+        "Failed Breakout Universe Reports",
+    )
 
     strategies = _records_where_payload_field(
         engine,
@@ -313,6 +329,13 @@ def render_research_run_detail(engine) -> None:
                 "strategy_id",
                 strategy_id,
                 "Event Definition Sensitivity",
+            )
+            _render_single_payload(
+                engine,
+                "failed_breakout_sensitivity_reports",
+                "strategy_id",
+                strategy_id,
+                "Failed Breakout Sensitivity",
             )
             _render_single_payload(engine, "trade_summaries", "strategy_id", strategy_id, "Trade Summary")
             _render_single_payload(
