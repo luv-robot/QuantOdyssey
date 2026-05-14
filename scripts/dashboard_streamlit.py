@@ -31,6 +31,10 @@ KEY_TABLES = [
     "research_design_drafts",
     "event_episodes",
     "research_asset_index",
+    "research_findings",
+    "research_tasks",
+    "research_harness_cycles",
+    "event_definition_sensitivity_reports",
     "signals",
     "market_regime_snapshots",
     "data_quality_reports",
@@ -235,6 +239,13 @@ def render_research_run_detail(engine) -> None:
     _render_related_payloads(engine, "thesis_pre_reviews", "thesis_id", thesis["thesis_id"], "Thesis Pre-Reviews")
     _render_related_payloads(engine, "research_design_drafts", "thesis_id", thesis["thesis_id"], "Research Design Drafts")
     _render_related_payloads(engine, "event_episodes", "thesis_id", thesis["thesis_id"], "Event Episodes")
+    _render_related_payloads(
+        engine,
+        "event_definition_sensitivity_reports",
+        "thesis_id",
+        thesis["thesis_id"],
+        "Event Definition Sensitivity Reports",
+    )
 
     strategies = _records_where_payload_field(
         engine,
@@ -287,6 +298,13 @@ def render_research_run_detail(engine) -> None:
                 "strategy_id",
                 strategy_id,
                 "Monte Carlo",
+            )
+            _render_single_payload(
+                engine,
+                "event_definition_sensitivity_reports",
+                "strategy_id",
+                strategy_id,
+                "Event Definition Sensitivity",
             )
             _render_single_payload(engine, "trade_summaries", "strategy_id", strategy_id, "Trade Summary")
             _render_single_payload(

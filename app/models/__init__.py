@@ -10,6 +10,8 @@ from app.models.baseline import BaselineComparisonReport, BaselineResult
 from app.models.experiment import ExperimentManifest
 from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStatus
 from app.models.harness import (
+    EventDefinitionSensitivityReport,
+    EventDefinitionSensitivityTrial,
     ResearchFinding,
     ResearchFindingSeverity,
     ResearchHarnessCycle,
@@ -127,6 +129,8 @@ __all__ = [
     "ExperimentManifest",
     "ExperimentQueueItem",
     "ExperimentQueueStatus",
+    "EventDefinitionSensitivityReport",
+    "EventDefinitionSensitivityTrial",
     "FailureDiagnosis",
     "MarketSignal",
     "ModelResponseLog",

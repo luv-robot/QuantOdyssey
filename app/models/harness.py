@@ -93,3 +93,48 @@ class ResearchHarnessCycle(BaseModel):
     task_ids: list[str] = Field(default_factory=list)
     summary: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EventDefinitionSensitivityTrial(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trial_id: str = Field(min_length=1)
+    funding_percentile_threshold: float = Field(ge=0, le=100)
+    oi_percentile_threshold: float = Field(ge=0, le=100)
+    failed_breakout_window: int = Field(ge=1)
+    oi_retreat_threshold: float = Field(ge=0)
+    event_count: int = Field(ge=0)
+    trade_count: int = Field(ge=0)
+    average_return: float
+    total_return: float
+    profit_factor: float
+    sharpe: float | None = None
+    max_drawdown: float
+    beats_cash: bool
+    beats_funding_only: bool
+
+
+class EventDefinitionSensitivityReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    task_id: str | None = None
+    thesis_id: str | None = None
+    signal_id: str | None = None
+    strategy_id: str | None = None
+    strategy_family: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    timeframe: str = Field(min_length=1)
+    horizon_hours: int = Field(ge=1)
+    search_budget_trials: int = Field(ge=0)
+    completed_trials: int = Field(ge=0)
+    funding_only_total_return: float
+    funding_only_profit_factor: float
+    funding_only_trade_count: int = Field(ge=0)
+    best_trial: EventDefinitionSensitivityTrial | None = None
+    robust_trial_count: int = Field(ge=0)
+    min_trade_count: int = Field(ge=1)
+    trials: list[EventDefinitionSensitivityTrial] = Field(default_factory=list)
+    data_warnings: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

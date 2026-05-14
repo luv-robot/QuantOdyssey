@@ -15,6 +15,7 @@ from app.models import (
     CrossSymbolValidationReport,
     DataQualityReport,
     EnhancedReviewMetrics,
+    EventDefinitionSensitivityReport,
     EventEpisode,
     ExperimentManifest,
     ExperimentQueueItem,
@@ -330,6 +331,20 @@ class ResearchHarnessCycleRecord(Base):
     signal_id = Column(String, index=True, nullable=False)
     thesis_id = Column(String, index=True)
     source = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class EventDefinitionSensitivityReportRecord(Base):
+    __tablename__ = "event_definition_sensitivity_reports"
+
+    report_id = Column(String, primary_key=True)
+    task_id = Column(String, index=True)
+    signal_id = Column(String, index=True)
+    strategy_id = Column(String, index=True)
+    thesis_id = Column(String, index=True)
+    strategy_family = Column(String, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1286,6 +1301,56 @@ class QuantRepository:
                 query = query.filter(ResearchHarnessCycleRecord.signal_id == signal_id)
             records = query.order_by(ResearchHarnessCycleRecord.created_at.desc()).limit(limit).all()
             return [_load(ResearchHarnessCycle, record.payload) for record in records]
+
+    def save_event_definition_sensitivity_report(
+        self,
+        report: EventDefinitionSensitivityReport,
+    ) -> EventDefinitionSensitivityReport:
+        with self._session() as session:
+            session.merge(
+                EventDefinitionSensitivityReportRecord(
+                    report_id=report.report_id,
+                    task_id=report.task_id,
+                    signal_id=report.signal_id,
+                    strategy_id=report.strategy_id,
+                    thesis_id=report.thesis_id,
+                    strategy_family=report.strategy_family,
+                    symbol=report.symbol,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_event_definition_sensitivity_report(
+        self,
+        report_id: str,
+    ) -> Optional[EventDefinitionSensitivityReport]:
+        record = self._get(EventDefinitionSensitivityReportRecord, report_id)
+        return None if record is None else _load(EventDefinitionSensitivityReport, record.payload)
+
+    def query_event_definition_sensitivity_reports(
+        self,
+        task_id: Optional[str] = None,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[EventDefinitionSensitivityReport]:
+        with self._session() as session:
+            query = session.query(EventDefinitionSensitivityReportRecord)
+            if task_id is not None:
+                query = query.filter(EventDefinitionSensitivityReportRecord.task_id == task_id)
+            if thesis_id is not None:
+                query = query.filter(EventDefinitionSensitivityReportRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(EventDefinitionSensitivityReportRecord.signal_id == signal_id)
+            if strategy_family is not None:
+                query = query.filter(EventDefinitionSensitivityReportRecord.strategy_family == strategy_family)
+            if symbol is not None:
+                query = query.filter(EventDefinitionSensitivityReportRecord.symbol == symbol)
+            records = query.order_by(EventDefinitionSensitivityReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(EventDefinitionSensitivityReport, record.payload) for record in records]
 
     def save_workflow_run(self, workflow: WorkflowRun) -> WorkflowRun:
         with self._session() as session:
