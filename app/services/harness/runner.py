@@ -106,7 +106,7 @@ def run_research_harness_queue(
     blocked = sum(1 for result in results if result.status == ResearchTaskStatus.BLOCKED)
     summary = HarnessQueueRunSummary(
         run_id=run_id,
-        considered=len(proposed_tasks),
+        considered=len(results),
         executed=executed,
         skipped=len(results) - executed,
         completed=completed,
