@@ -54,6 +54,8 @@ KEY_TABLES = [
     "public_strategy_cards",
     "strategy_catalog_items",
     "strategy_catalog_reports",
+    "factor_formula_items",
+    "factor_formula_catalog_reports",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",
@@ -570,12 +572,19 @@ def render_strategy_catalog(engine) -> None:
     st.subheader("Strategy Catalog")
     reports = recent_records(engine, "strategy_catalog_reports", limit=5)
     items = recent_records(engine, "strategy_catalog_items", limit=200)
-    if not reports and not items:
-        st.info("No strategy catalog records found yet. Import Lean metadata first.")
-        st.code("python scripts/import_lean_strategy_catalog.py --save-to-db", language="bash")
+    factor_reports = recent_records(engine, "factor_formula_catalog_reports", limit=5)
+    factors = recent_records(engine, "factor_formula_items", limit=200)
+    if not reports and not items and not factor_reports and not factors:
+        st.info("No catalog records found yet. Import Lean metadata and seed factor formulas first.")
+        st.code(
+            "python scripts/import_lean_strategy_catalog.py --language python --max-files 100 --save-to-db\n"
+            "python scripts/seed_factor_formula_catalog.py --save-to-db",
+            language="bash",
+        )
         return
 
     if reports:
+        st.write("**Lean Strategy Samples**")
         latest = reports[0]
         columns = st.columns(4)
         columns[0].metric("Catalog Items", latest.get("item_count", 0))
@@ -607,6 +616,44 @@ def render_strategy_catalog(engine) -> None:
         st.dataframe(rows, use_container_width=True, hide_index=True)
         with st.expander("Catalog item payloads"):
             for item in items[:25]:
+                st.json(item)
+
+    if factor_reports:
+        st.write("**WorldQuant-Style Factor Templates**")
+        latest_factor_report = factor_reports[0]
+        columns = st.columns(4)
+        columns[0].metric("Factor Templates", latest_factor_report.get("total_items", 0))
+        columns[1].metric("Baseline Candidates", latest_factor_report.get("baseline_candidate_count", 0))
+        columns[2].metric(
+            "Portable OHLCV",
+            (latest_factor_report.get("implementation_status_counts") or {}).get("portable_ohlcv", 0),
+        )
+        columns[3].metric(
+            "Cross-Sectional",
+            (latest_factor_report.get("scope_counts") or {}).get("cross_sectional_universe", 0),
+        )
+        for finding in latest_factor_report.get("findings", []):
+            st.caption(finding)
+        with st.expander("Latest factor catalog report"):
+            st.json(latest_factor_report)
+
+    if factors:
+        factor_rows = [
+            {
+                "name": item.get("name"),
+                "family": item.get("factor_family"),
+                "scope": item.get("evaluation_scope"),
+                "status": item.get("implementation_status"),
+                "data_level": item.get("data_sufficiency_level"),
+                "fields": ", ".join(item.get("required_fields") or []),
+                "roles": ", ".join(item.get("baseline_roles") or []),
+                "formula": item.get("formula_expression"),
+            }
+            for item in factors
+        ]
+        st.dataframe(factor_rows, use_container_width=True, hide_index=True)
+        with st.expander("Factor formula payloads"):
+            for item in factors[:25]:
                 st.json(item)
 
 

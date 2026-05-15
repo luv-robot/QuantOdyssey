@@ -15,6 +15,13 @@ from app.models.backtest_validation import BacktestValidationReport
 from app.models.baseline import BaselineComparisonReport, BaselineResult
 from app.models.experiment import ExperimentManifest
 from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStatus
+from app.models.factor_catalog import (
+    FactorCatalogSource,
+    FactorEvaluationScope,
+    FactorFormulaCatalogReport,
+    FactorFormulaItem,
+    FactorImplementationStatus,
+)
 from app.models.harness import (
     BaselineImpliedRegimeReport,
     DataSufficiencyGateReport,
@@ -192,6 +199,11 @@ __all__ = [
     "ExperimentManifest",
     "ExperimentQueueItem",
     "ExperimentQueueStatus",
+    "FactorCatalogSource",
+    "FactorEvaluationScope",
+    "FactorFormulaCatalogReport",
+    "FactorFormulaItem",
+    "FactorImplementationStatus",
     "EventDefinitionSensitivityReport",
     "EventDefinitionSensitivityTrial",
     "EventDefinitionUniverseCell",

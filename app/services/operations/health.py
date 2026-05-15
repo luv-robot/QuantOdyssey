@@ -30,6 +30,8 @@ DEFAULT_TABLES = (
     "public_strategy_cards",
     "strategy_catalog_items",
     "strategy_catalog_reports",
+    "factor_formula_items",
+    "factor_formula_catalog_reports",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",

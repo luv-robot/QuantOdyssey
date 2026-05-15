@@ -20,6 +20,8 @@ from app.models import (
     EventDefinitionUniverseReport,
     EventEpisode,
     ExperimentManifest,
+    FactorFormulaCatalogReport,
+    FactorFormulaItem,
     FailedBreakoutSensitivityReport,
     FailedBreakoutUniverseReport,
     ExperimentQueueItem,
@@ -446,6 +448,27 @@ class StrategyCatalogItemRecord(Base):
 
 class StrategyCatalogReportRecord(Base):
     __tablename__ = "strategy_catalog_reports"
+
+    report_id = Column(String, primary_key=True)
+    source = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FactorFormulaItemRecord(Base):
+    __tablename__ = "factor_formula_items"
+
+    factor_id = Column(String, primary_key=True)
+    source = Column(String, index=True, nullable=False)
+    factor_family = Column(String, index=True, nullable=False)
+    evaluation_scope = Column(String, index=True, nullable=False)
+    implementation_status = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FactorFormulaCatalogReportRecord(Base):
+    __tablename__ = "factor_formula_catalog_reports"
 
     report_id = Column(String, primary_key=True)
     source = Column(String, index=True, nullable=False)
@@ -1870,6 +1893,75 @@ class QuantRepository:
                 query = query.filter(StrategyCatalogReportRecord.source == source)
             records = query.order_by(StrategyCatalogReportRecord.created_at.desc()).limit(limit).all()
             return [_load(StrategyCatalogReport, record.payload) for record in records]
+
+    def save_factor_formula_item(self, item: FactorFormulaItem) -> FactorFormulaItem:
+        with self._session() as session:
+            session.merge(
+                FactorFormulaItemRecord(
+                    factor_id=item.factor_id,
+                    source=item.source.value,
+                    factor_family=item.factor_family,
+                    evaluation_scope=item.evaluation_scope.value,
+                    implementation_status=item.implementation_status.value,
+                    payload=_dump(item),
+                )
+            )
+        return item
+
+    def get_factor_formula_item(self, factor_id: str) -> Optional[FactorFormulaItem]:
+        record = self._get(FactorFormulaItemRecord, factor_id)
+        return None if record is None else _load(FactorFormulaItem, record.payload)
+
+    def query_factor_formula_items(
+        self,
+        source: Optional[str] = None,
+        factor_family: Optional[str] = None,
+        evaluation_scope: Optional[str] = None,
+        implementation_status: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[FactorFormulaItem]:
+        with self._session() as session:
+            query = session.query(FactorFormulaItemRecord)
+            if source is not None:
+                query = query.filter(FactorFormulaItemRecord.source == source)
+            if factor_family is not None:
+                query = query.filter(FactorFormulaItemRecord.factor_family == factor_family)
+            if evaluation_scope is not None:
+                query = query.filter(FactorFormulaItemRecord.evaluation_scope == evaluation_scope)
+            if implementation_status is not None:
+                query = query.filter(FactorFormulaItemRecord.implementation_status == implementation_status)
+            records = query.order_by(FactorFormulaItemRecord.created_at.desc()).limit(limit).all()
+            return [_load(FactorFormulaItem, record.payload) for record in records]
+
+    def save_factor_formula_catalog_report(
+        self,
+        report: FactorFormulaCatalogReport,
+    ) -> FactorFormulaCatalogReport:
+        with self._session() as session:
+            session.merge(
+                FactorFormulaCatalogReportRecord(
+                    report_id=report.report_id,
+                    source=report.source.value,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_factor_formula_catalog_report(self, report_id: str) -> Optional[FactorFormulaCatalogReport]:
+        record = self._get(FactorFormulaCatalogReportRecord, report_id)
+        return None if record is None else _load(FactorFormulaCatalogReport, record.payload)
+
+    def query_factor_formula_catalog_reports(
+        self,
+        source: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[FactorFormulaCatalogReport]:
+        with self._session() as session:
+            query = session.query(FactorFormulaCatalogReportRecord)
+            if source is not None:
+                query = query.filter(FactorFormulaCatalogReportRecord.source == source)
+            records = query.order_by(FactorFormulaCatalogReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(FactorFormulaCatalogReport, record.payload) for record in records]
 
     def save_event_definition_sensitivity_report(
         self,
