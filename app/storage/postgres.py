@@ -51,6 +51,7 @@ from app.models import (
     ResearchAssetIndexEntry,
     ResearchTask,
     ResearchThesis,
+    ThesisDataContract,
     ResourceBudgetReport,
     ReviewCase,
     ReviewSession,
@@ -110,6 +111,17 @@ class ResearchDesignDraftRecord(Base):
     design_id = Column(String, primary_key=True)
     thesis_id = Column(String, index=True, nullable=False)
     pre_review_id = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ThesisDataContractRecord(Base):
+    __tablename__ = "thesis_data_contracts"
+
+    contract_id = Column(String, primary_key=True)
+    thesis_id = Column(String, index=True, nullable=False)
+    signal_id = Column(String, index=True)
+    status = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -784,6 +796,38 @@ class QuantRepository:
                 query = query.filter(ResearchDesignDraftRecord.thesis_id == thesis_id)
             records = query.order_by(ResearchDesignDraftRecord.created_at.desc()).limit(limit).all()
         return [_load(ResearchDesignDraft, record.payload) for record in records]
+
+    def save_thesis_data_contract(self, contract: ThesisDataContract) -> ThesisDataContract:
+        with self._session() as session:
+            session.merge(
+                ThesisDataContractRecord(
+                    contract_id=contract.contract_id,
+                    thesis_id=contract.thesis_id,
+                    signal_id=contract.signal_id,
+                    status=contract.status.value,
+                    payload=_dump(contract),
+                )
+            )
+        return contract
+
+    def get_thesis_data_contract(self, contract_id: str) -> Optional[ThesisDataContract]:
+        record = self._get(ThesisDataContractRecord, contract_id)
+        return None if record is None else _load(ThesisDataContract, record.payload)
+
+    def query_thesis_data_contracts(
+        self,
+        thesis_id: Optional[str] = None,
+        signal_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ThesisDataContract]:
+        with self._session() as session:
+            query = session.query(ThesisDataContractRecord)
+            if thesis_id is not None:
+                query = query.filter(ThesisDataContractRecord.thesis_id == thesis_id)
+            if signal_id is not None:
+                query = query.filter(ThesisDataContractRecord.signal_id == signal_id)
+            records = query.order_by(ThesisDataContractRecord.created_at.desc()).limit(limit).all()
+        return [_load(ThesisDataContract, record.payload) for record in records]
 
     def save_event_episode(self, event: EventEpisode) -> EventEpisode:
         with self._session() as session:

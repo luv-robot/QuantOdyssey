@@ -17,6 +17,10 @@ from app.models import (
     StrategyFamily,
     ThesisPreReview,
 )
+from app.services.researcher.data_contract import (
+    preferred_timeframe_from_thesis,
+    requested_side_from_thesis,
+)
 
 
 COMMON_INDICATORS = {
@@ -155,7 +159,14 @@ def build_event_episode(
     design: ResearchDesignDraft,
 ) -> EventEpisode:
     text = _thesis_text(thesis)
-    direction = "short" if any(term in text for term in ["做空", "short", "crowded longs"]) else "long_or_mixed"
+    side = requested_side_from_thesis(thesis)
+    if side == "long_only":
+        direction = "long"
+    elif side == "short_only":
+        direction = "short"
+    else:
+        direction = "short" if any(term in text for term in ["做空", "short", "crowded longs"]) else "long_or_mixed"
+    timeframe = preferred_timeframe_from_thesis(thesis, fallback=signal.timeframe) or signal.timeframe
     missing_evidence = _event_missing_evidence(signal, design)
     validation_level = (
         DataSufficiencyLevel.L0_OHLCV_ONLY
@@ -171,8 +182,8 @@ def build_event_episode(
         stage=EventEpisodeStage.SETUP,
         direction=direction,
         symbol=signal.symbol,
-        timeframe=signal.timeframe,
-        setup_window_bars=_setup_window_bars(signal.timeframe),
+        timeframe=timeframe,
+        setup_window_bars=_setup_window_bars(timeframe),
         trigger_window_bars=_trigger_window_bars(text),
         data_sufficiency_level=design.data_sufficiency_level,
         validation_data_sufficiency_level=validation_level,

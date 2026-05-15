@@ -12,6 +12,7 @@ class SignalType(str, Enum):
     FUNDING_OI_EXTREME = "funding_oi_extreme"
     ORDERBOOK_IMBALANCE = "orderbook_imbalance"
     LIQUIDATION_CLUSTER = "liquidation_cluster"
+    THESIS_SEED = "thesis_seed"
 
 
 class MarketSignal(BaseModel):

@@ -58,6 +58,12 @@ class DataSufficiencyLevel(str, Enum):
     L3_ONCHAIN_NARRATIVE = "L3_onchain_narrative"
 
 
+class ThesisDataContractStatus(str, Enum):
+    COMPATIBLE = "compatible"
+    NEEDS_THESIS_SEED = "needs_thesis_seed"
+    BLOCKED = "blocked"
+
+
 class ResearchThesis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +80,26 @@ class ResearchThesis(BaseModel):
     risk_notes: list[str] = Field(default_factory=list)
     linked_signal_ids: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+
+
+class ThesisDataContract(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: str = Field(min_length=1)
+    thesis_id: str = Field(min_length=1)
+    signal_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: ThesisDataContractStatus
+    can_run: bool = False
+    requested_timeframe: Optional[str] = None
+    requested_data: list[str] = Field(default_factory=list)
+    requested_side: Optional[str] = None
+    signal_timeframe: Optional[str] = None
+    signal_data_sources: list[str] = Field(default_factory=list)
+    signal_type: Optional[str] = None
+    mismatches: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recommended_action: str = Field(min_length=1)
 
 
 class PreReviewQuestion(BaseModel):

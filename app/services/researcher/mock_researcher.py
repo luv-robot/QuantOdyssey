@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.models import MarketSignal, ModelResponseLog, PromptLog, ResearchThesis, StrategyManifest
+from app.services.researcher.data_contract import preferred_timeframe_from_thesis
 
 
 def _strategy_name(signal: MarketSignal) -> str:
@@ -417,7 +418,8 @@ def generate_strategy_from_thesis(
         strategy_name = f"Thesis{strategy_name}"
     strategy_id = f"strategy_{thesis.thesis_id}_{signal.signal_id}"
     file_path = strategy_dir / f"{strategy_name}.py"
-    code = build_strategy_code(strategy_name, signal.timeframe)
+    timeframe = preferred_timeframe_from_thesis(thesis, fallback=signal.timeframe) or signal.timeframe
+    code = build_strategy_code(strategy_name, timeframe)
 
     strategy_dir.mkdir(parents=True, exist_ok=True)
     file_path.write_text(code, encoding="utf-8")
@@ -429,7 +431,7 @@ def generate_strategy_from_thesis(
         name=strategy_name,
         file_path=str(file_path),
         generated_at=datetime.utcnow(),
-        timeframe=signal.timeframe,
+        timeframe=timeframe,
         symbols=[signal.symbol],
         assumptions=[
             thesis.hypothesis,

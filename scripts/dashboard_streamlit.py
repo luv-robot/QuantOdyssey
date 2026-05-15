@@ -24,7 +24,13 @@ from app.services.agent_eval import build_builtin_agent_eval_cases, run_agent_ev
 from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
 from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
 from app.services.metrics import performance_metric_registry  # noqa: E402
-from app.services.researcher import build_research_design_draft, build_thesis_pre_review  # noqa: E402
+from app.services.researcher import (  # noqa: E402
+    build_research_design_draft,
+    build_thesis_data_contract,
+    build_thesis_seed_signal,
+    build_thesis_pre_review,
+    draft_thesis_fields_from_notes,
+)
 from app.services.supervisor import build_supervisor_report, supervisor_chat_answer  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
@@ -35,6 +41,7 @@ KEY_TABLES = [
     "research_theses",
     "thesis_pre_reviews",
     "research_design_drafts",
+    "thesis_data_contracts",
     "event_episodes",
     "research_asset_index",
     "research_findings",
@@ -130,16 +137,23 @@ def _lines(value: str, fallback: list[str]) -> list[str]:
 def render_research_pipeline(engine, database_url: str) -> None:
     st.subheader("Human-Led Research Pipeline")
     signals = recent_records(engine, "signals", limit=25)
-    if not signals:
-        st.info("No MarketSignal records found yet. Run the market data flow first.")
-        return
-
     signal_options = {
+        "Auto: build data context from thesis": None,
+        **{
         f"{item['signal_id']} | {item['symbol']} | rank {item['rank_score']} | {item['created_at']}": item
         for item in signals
+        },
     }
     with st.form("research_pipeline_form"):
-        selected_label = st.selectbox("MarketSignal", list(signal_options))
+        research_notes = st.text_area(
+            "Research command / thesis notes",
+            placeholder=(
+                "Paste a raw idea or tell Odyssey what you want to test. "
+                "Example: Test daily BTC RSI divergence, long-only, OHLCV only, must define stoploss."
+            ),
+            height=180,
+        )
+        selected_label = st.selectbox("Data context", list(signal_options))
         title = st.text_input("Thesis title", placeholder="Volume absorption continuation")
         market_observation = st.text_area(
             "Market observation",
@@ -176,30 +190,70 @@ def render_research_pipeline(engine, database_url: str) -> None:
 
     if not (pre_review_only or submitted):
         return
-    if not all([title.strip(), market_observation.strip(), hypothesis.strip(), trade_logic.strip()]):
+    draft = draft_thesis_fields_from_notes(research_notes)
+    title_value = title.strip() or draft.get("title", "").strip()
+    observation_value = market_observation.strip() or draft.get("market_observation", "").strip()
+    hypothesis_value = hypothesis.strip() or draft.get("hypothesis", "").strip()
+    trade_logic_value = trade_logic.strip() or draft.get("trade_logic", "").strip()
+    expected_regimes_value = expected_regimes.strip() or draft.get("expected_regimes", "").strip()
+    invalidation_value = invalidation_conditions.strip() or draft.get("invalidation_conditions", "").strip()
+    constraints_value = "\n".join(
+        item
+        for item in [constraints.strip(), draft.get("constraints", "").strip()]
+        if item
+    )
+    if not all([title_value, observation_value, hypothesis_value, trade_logic_value]):
         st.error("Title, observation, hypothesis, and trade logic are required.")
         return
 
-    signal = MarketSignal.model_validate(signal_options[selected_label])
     thesis = ResearchThesis(
         thesis_id=f"thesis_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}",
-        title=title.strip(),
+        title=title_value,
         status=ThesisStatus.READY_FOR_IMPLEMENTATION,
-        market_observation=market_observation.strip(),
-        hypothesis=hypothesis.strip(),
-        trade_logic=trade_logic.strip(),
-        expected_regimes=_lines(expected_regimes, ["unspecified"]),
-        invalidation_conditions=_lines(invalidation_conditions, ["not specified"]),
-        linked_signal_ids=[signal.signal_id],
-        constraints=_lines(constraints, []),
+        market_observation=observation_value,
+        hypothesis=hypothesis_value,
+        trade_logic=trade_logic_value,
+        expected_regimes=_lines(expected_regimes_value, ["unspecified"]),
+        invalidation_conditions=_lines(invalidation_value, ["not specified"]),
+        linked_signal_ids=[],
+        constraints=_lines(constraints_value, []),
     )
+    selected_payload = signal_options[selected_label]
+    selected_signal = None if selected_payload is None else MarketSignal.model_validate(selected_payload)
+    data_contract = build_thesis_data_contract(thesis, selected_signal)
+    signal = selected_signal
+    if signal is None or not data_contract.can_run:
+        signal = build_thesis_seed_signal(thesis, source_signal=selected_signal)
+        data_contract = build_thesis_data_contract(thesis, signal).model_copy(
+            update={
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            *data_contract.mismatches,
+                            *data_contract.warnings,
+                            "Using a thesis-seed data context so the run follows the thesis data requirements.",
+                        ]
+                    )
+                ),
+                "recommended_action": (
+                    "Confirm historical data exists for this thesis-seed timeframe before trusting real backtests."
+                ),
+            }
+        )
+    thesis = thesis.model_copy(update={"linked_signal_ids": [signal.signal_id]})
     repository = QuantRepository(database_url)
     pre_review = build_thesis_pre_review(thesis)
     research_design = build_research_design_draft(thesis, pre_review)
+    repository.save_signal(signal)
     repository.save_research_thesis(thesis)
+    repository.save_thesis_data_contract(data_contract)
     repository.save_thesis_pre_review(pre_review)
     repository.save_research_design_draft(research_design)
 
+    st.write("### Data Contract")
+    if data_contract.warnings:
+        st.warning("Data context adjusted: " + " ".join(data_contract.warnings))
+    st.json(data_contract.model_dump(mode="json"))
     st.write("### Thesis Pre-Review")
     status_method = {
         PreReviewStatus.READY_FOR_DESIGN: st.success,

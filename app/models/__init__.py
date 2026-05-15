@@ -123,6 +123,8 @@ from app.models.research import (
     ResearchThesis,
     StrategyCandidate,
     StrategyFamily,
+    ThesisDataContract,
+    ThesisDataContractStatus,
     ThesisPreReview,
     ThesisStatus,
 )
@@ -283,6 +285,8 @@ __all__ = [
     "StrategyVersion",
     "SymbolValidationResult",
     "ThesisStatus",
+    "ThesisDataContract",
+    "ThesisDataContractStatus",
     "ThesisInboxItem",
     "ThesisInboxSource",
     "ThesisInboxStatus",

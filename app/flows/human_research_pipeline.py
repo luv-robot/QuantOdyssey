@@ -32,6 +32,7 @@ from app.models import (
     RiskAuditResult,
     StrategyCandidate,
     StrategyManifest,
+    ThesisDataContract,
     ThesisPreReview,
     ThesisStatus,
     WorkflowRun,
@@ -61,6 +62,10 @@ from app.services.harness import build_research_harness_cycle
 from app.services.operations import evaluate_resource_budget
 from app.services.paper_trading import build_paper_trading_plan
 from app.services.researcher import build_researcher_logs
+from app.services.researcher.data_contract import (
+    build_thesis_data_contract,
+    build_thesis_seed_signal,
+)
 from app.services.researcher.candidates import (
     generate_thesis_strategy_candidates,
     rank_strategy_candidates,
@@ -112,6 +117,7 @@ class HumanResearchPipelineResult(BaseModel):
 
     thesis: ResearchThesis
     signal: MarketSignal
+    data_contract: ThesisDataContract
     pre_review: ThesisPreReview
     research_design: ResearchDesignDraft
     event_episode: EventEpisode
@@ -137,6 +143,30 @@ def run_human_research_pipeline(
     strategy_dir: Path = Path("freqtrade_user_data/strategies"),
     review_store: InMemoryReviewStore | None = None,
 ) -> HumanResearchPipelineResult:
+    data_contract = build_thesis_data_contract(thesis, signal)
+    if not data_contract.can_run:
+        source_signal = signal
+        signal = build_thesis_seed_signal(thesis, source_signal=source_signal)
+        data_contract = build_thesis_data_contract(thesis, signal).model_copy(
+            update={
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            *data_contract.mismatches,
+                            *data_contract.warnings,
+                            (
+                                "Selected MarketSignal was replaced by a thesis-seed context "
+                                f"to avoid testing `{thesis.thesis_id}` on incompatible data."
+                            ),
+                        ]
+                    )
+                ),
+                "recommended_action": (
+                    "Pipeline used a thesis-seed context. Confirm real data availability "
+                    "for the requested timeframe before trusting results."
+                ),
+            }
+        )
     thesis = thesis.model_copy(
         update={
             "status": ThesisStatus.TESTING,
@@ -145,6 +175,9 @@ def run_human_research_pipeline(
         }
     )
     repository.save_signal(signal)
+    save_contract = getattr(repository, "save_thesis_data_contract", None)
+    if callable(save_contract):
+        save_contract(data_contract)
     regime_snapshot = label_market_regime(signal)
     repository.save_market_regime_snapshot(regime_snapshot)
     repository.save_data_quality_report(audit_market_signal_quality(signal))
@@ -403,6 +436,7 @@ def run_human_research_pipeline(
     return HumanResearchPipelineResult(
         thesis=thesis,
         signal=signal,
+        data_contract=data_contract,
         pre_review=pre_review,
         research_design=research_design,
         event_episode=event_episode,
