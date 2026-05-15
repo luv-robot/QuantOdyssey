@@ -28,6 +28,11 @@ def main() -> int:
     parser.add_argument("--monte-carlo-seed", type=int, default=7)
     parser.add_argument("--monte-carlo-expensive-threshold", type=int, default=250_000)
     parser.add_argument("--approve-expensive-monte-carlo", action="store_true")
+    parser.add_argument("--walk-forward-folds", type=int, default=3)
+    parser.add_argument("--walk-forward-min-trades-per-window", type=int, default=20)
+    parser.add_argument("--walk-forward-min-pass-rate", type=float, default=0.5)
+    parser.add_argument("--walk-forward-horizon-hours", type=int, default=2)
+    parser.add_argument("--walk-forward-fee-rate", type=float, default=0.001)
     args = parser.parse_args()
 
     config = HarnessRunnerConfig(
@@ -45,6 +50,11 @@ def main() -> int:
         monte_carlo_seed=args.monte_carlo_seed,
         monte_carlo_expensive_threshold=args.monte_carlo_expensive_threshold,
         approve_expensive_monte_carlo=args.approve_expensive_monte_carlo,
+        walk_forward_folds=args.walk_forward_folds,
+        walk_forward_min_trades_per_window=args.walk_forward_min_trades_per_window,
+        walk_forward_min_pass_rate=args.walk_forward_min_pass_rate,
+        walk_forward_horizon_hours=args.walk_forward_horizon_hours,
+        walk_forward_fee_rate=args.walk_forward_fee_rate,
     )
     repository = QuantRepository(args.database_url)
     summary = run_research_harness_queue(repository, config=config)

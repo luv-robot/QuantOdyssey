@@ -34,7 +34,10 @@ from app.services.harness.screening import (
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
 )
-from app.services.harness.validation import run_failed_breakout_bootstrap_monte_carlo
+from app.services.harness.validation import (
+    run_failed_breakout_bootstrap_monte_carlo,
+    run_failed_breakout_walk_forward_validation,
+)
 from app.services.market_data import (
     find_freqtrade_funding_file,
     find_open_interest_file,
@@ -50,6 +53,7 @@ SUPPORTED_AUTOMATIC_TASK_TYPES = {
     ResearchTaskType.EVENT_FREQUENCY_SCAN,
     ResearchTaskType.REGIME_BUCKET_TEST,
     ResearchTaskType.MONTE_CARLO_TEST,
+    ResearchTaskType.WALK_FORWARD_TEST,
 }
 
 
@@ -68,6 +72,11 @@ class HarnessRunnerConfig:
     monte_carlo_seed: int | None = 7
     monte_carlo_expensive_threshold: int = 250_000
     approve_expensive_monte_carlo: bool = False
+    walk_forward_folds: int = 3
+    walk_forward_min_trades_per_window: int = 20
+    walk_forward_min_pass_rate: float = 0.5
+    walk_forward_horizon_hours: int = 2
+    walk_forward_fee_rate: float = 0.001
     scratchpad_base_dir: Path = Path(".qo") / "scratchpad"
 
 
@@ -263,6 +272,8 @@ def _execute_task(
         return _execute_regime_bucket_test(repository, task, config=config, scratchpad_run=scratchpad_run)
     if task.task_type == ResearchTaskType.MONTE_CARLO_TEST:
         return _execute_monte_carlo_test(repository, task, config=config, scratchpad_run=scratchpad_run)
+    if task.task_type == ResearchTaskType.WALK_FORWARD_TEST:
+        return _execute_walk_forward_test(repository, task, config=config, scratchpad_run=scratchpad_run)
     raise ValueError(f"Unsupported Harness task type: {task.task_type.value}")
 
 
@@ -601,6 +612,111 @@ def _execute_monte_carlo_test(
             scratchpad_run=scratchpad_run,
         )
     return _execute_strategy_monte_carlo(repository, task, config=config, scratchpad_run=scratchpad_run)
+
+
+def _execute_walk_forward_test(
+    repository,
+    task: ResearchTask,
+    *,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    family = _task_strategy_family(task)
+    universe_report = _failed_breakout_universe_for_task(repository, task) if family == StrategyFamily.FAILED_BREAKOUT_PUNISHMENT else None
+    if universe_report is None:
+        return [
+            _finding(
+                task=task,
+                finding_type="walk_forward_test",
+                severity=ResearchFindingSeverity.HIGH,
+                summary="Harness could not run automatic walk-forward validation for this task.",
+                observations=[
+                    f"strategy_family={family.value}",
+                    "Automatic walk-forward currently requires a strategy-family universe report with replayable event trials.",
+                ],
+                evidence_gaps=[
+                    "missing_replayable_universe_report"
+                    if family == StrategyFamily.FAILED_BREAKOUT_PUNISHMENT
+                    else f"unsupported_walk_forward_family:{family.value}"
+                ],
+            )
+        ], []
+    return _execute_failed_breakout_walk_forward(
+        repository,
+        task,
+        universe_report=universe_report,
+        config=config,
+        scratchpad_run=scratchpad_run,
+    )
+
+
+def _execute_failed_breakout_walk_forward(
+    repository,
+    task: ResearchTask,
+    *,
+    universe_report: FailedBreakoutUniverseReport,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    candles_by_cell, skipped = _load_candles_by_cell(
+        config,
+        symbols=tuple(universe_report.symbols or config.symbols),
+        timeframes=tuple(universe_report.timeframes or config.timeframes),
+    )
+    report = run_failed_breakout_walk_forward_validation(
+        universe_report=universe_report,
+        candles_by_cell=candles_by_cell,
+        folds=config.walk_forward_folds,
+        min_trades_per_window=config.walk_forward_min_trades_per_window,
+        min_pass_rate=config.walk_forward_min_pass_rate,
+        horizon_hours=config.walk_forward_horizon_hours,
+        fee_rate=config.walk_forward_fee_rate,
+    )
+    repository.save_strategy_family_walk_forward_report(report)
+    append_scratchpad_event(
+        run_id=scratchpad_run.run_id,
+        event_type=ScratchpadEventType.NOTE,
+        payload={"strategy_family_walk_forward_report": report.model_dump(mode="json"), "skipped_cells": skipped},
+        task_id=task.task_id,
+        thesis_id=task.thesis_id,
+        strategy_id=task.strategy_id,
+        evidence_refs=[f"strategy_family_walk_forward_report:{report.report_id}"],
+        base_dir=config.scratchpad_base_dir,
+    )
+    severity = ResearchFindingSeverity.LOW if report.passed else ResearchFindingSeverity.MEDIUM
+    if report.completed_windows == 0:
+        severity = ResearchFindingSeverity.HIGH
+    evidence_refs = [
+        f"failed_breakout_universe_report:{universe_report.report_id}",
+        f"strategy_family_walk_forward_report:{report.report_id}",
+    ]
+    observations = [
+        f"folds={report.folds}",
+        f"completed_windows={report.completed_windows}",
+        f"passed_windows={report.passed_windows}",
+        f"pass_rate={report.pass_rate:.1%}",
+        *report.findings,
+    ]
+    observations.extend(
+        (
+            f"{window.symbol}:{window.timeframe}:fold={window.fold_index}: "
+            f"trades={window.trade_count}, return={window.total_return:.4f}, "
+            f"pf={window.profit_factor:.2f}, baseline_return={window.baseline_total_return:.4f}, "
+            f"passed={window.passed}"
+        )
+        for window in report.windows
+    )
+    return [
+        _finding(
+            task=task,
+            finding_type="strategy_family_walk_forward_test",
+            severity=severity,
+            summary="Harness ran Failed Breakout strategy-family walk-forward validation.",
+            observations=observations,
+            evidence_gaps=skipped,
+            evidence_refs=evidence_refs,
+        )
+    ], evidence_refs
 
 
 def _execute_failed_breakout_monte_carlo(

@@ -8,9 +8,12 @@ from app.models import (
     BacktestReport,
     BacktestStatus,
     DataSufficiencyLevel,
+    FailedBreakoutUniverseCell,
+    FailedBreakoutUniverseReport,
     ResearchTask,
     ResearchTaskStatus,
     ResearchTaskType,
+    StrategyFamily,
     TradeRecord,
 )
 from app.services.harness import HarnessRunnerConfig, read_scratchpad_events, run_research_harness_queue
@@ -104,9 +107,9 @@ def test_harness_runner_skipped_tasks_do_not_consume_execution_budget(tmp_path) 
         required_experiments=["run baseline board"],
     ).model_copy(update={"created_at": datetime(2026, 1, 1, 10, 0)})
     unsupported_task = _task(
-        task_id="task_budget_walk_forward",
-        task_type=ResearchTaskType.WALK_FORWARD_TEST,
-        required_experiments=["run walk-forward validation"],
+        task_id="task_budget_cross_symbol",
+        task_type=ResearchTaskType.CROSS_SYMBOL_TEST,
+        required_experiments=["run cross-symbol validation"],
     ).model_copy(update={"created_at": datetime(2026, 1, 1, 11, 0)})
     repository.save_research_task(baseline_task)
     repository.save_research_task(unsupported_task)
@@ -128,6 +131,51 @@ def test_harness_runner_skipped_tasks_do_not_consume_execution_budget(tmp_path) 
     assert summary.skipped == 1
     assert repository.get_research_task(baseline_task.task_id).status == ResearchTaskStatus.COMPLETED
     assert repository.get_research_task(unsupported_task.task_id).status == ResearchTaskStatus.PROPOSED
+
+
+def test_harness_runner_executes_failed_breakout_walk_forward_task(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_failed_breakout_ohlcv(data_dir / "BTC_USDT_USDT-5m-futures.feather")
+    repository = QuantRepository()
+    universe = _failed_breakout_universe()
+    repository.save_failed_breakout_universe_report(universe)
+    task = _task(
+        task_id="task_walk_forward",
+        task_type=ResearchTaskType.WALK_FORWARD_TEST,
+        required_experiments=["run walk-forward split by time"],
+    ).model_copy(
+        update={
+            "subject_type": "strategy_family",
+            "subject_id": StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+            "evidence_refs": [f"failed_breakout_universe_report:{universe.report_id}"],
+        }
+    )
+    repository.save_research_task(task)
+
+    summary = run_research_harness_queue(
+        repository,
+        config=HarnessRunnerConfig(
+            data_dir=data_dir,
+            symbols=("BTC/USDT:USDT",),
+            timeframes=("5m",),
+            max_tasks=1,
+            walk_forward_min_trades_per_window=1,
+            walk_forward_horizon_hours=1,
+            scratchpad_base_dir=tmp_path / "scratchpad",
+        ),
+    )
+
+    assert summary.completed == 1
+    finding = repository.query_research_findings(thesis_id="thesis_runner")[0]
+    assert finding.finding_type == "strategy_family_walk_forward_test"
+    report_id = next(
+        ref.split(":", 1)[1] for ref in finding.evidence_refs if ref.startswith("strategy_family_walk_forward_report:")
+    )
+    report = repository.get_strategy_family_walk_forward_report(report_id)
+    assert report is not None
+    assert report.source_universe_report_id == universe.report_id
+    assert report.completed_windows == 3
 
 
 def test_harness_runner_executes_regime_bucket_task_with_trades(tmp_path) -> None:
@@ -263,6 +311,83 @@ def _write_ohlcv(path, *, start_price: float) -> None:
             }
         )
     pd.DataFrame(rows).to_feather(path)
+
+
+def _write_failed_breakout_ohlcv(path) -> None:
+    start = datetime(2026, 1, 1)
+    winning_events = {60, 150, 240}
+    losing_events = {105, 195, 285}
+    all_events = winning_events | losing_events
+    rows = []
+    for index in range(330):
+        timestamp = start + timedelta(minutes=5 * index)
+        base = 100 + (index % 20) * 0.01
+        close = base
+        high = base + 0.3
+        low = base - 0.3
+        volume = 1000
+        if index + 1 in all_events:
+            high = 102.0
+            close = 101.5
+            volume = 1400
+        if index in all_events:
+            high = 101.8
+            close = 100.1
+            low = 99.9
+            volume = 6000 if index in winning_events else 1000
+        for event_index in winning_events:
+            if event_index < index <= event_index + 12:
+                close = 99.0 - (index - event_index) * 0.02
+                high = max(high, close + 0.2)
+                low = min(low, close - 0.2)
+        for event_index in losing_events:
+            if event_index < index <= event_index + 12:
+                close = 101.0 + (index - event_index) * 0.02
+                high = max(high, close + 0.2)
+                low = min(low, close - 0.2)
+        open_ = close + 0.03
+        rows.append(
+            {
+                "date": timestamp,
+                "open": open_,
+                "high": max(high, open_, close),
+                "low": min(low, open_, close),
+                "close": close,
+                "volume": volume,
+            }
+        )
+    pd.DataFrame(rows).to_feather(path)
+
+
+def _failed_breakout_universe() -> FailedBreakoutUniverseReport:
+    trial_id = "trial_short_rolling_extreme_lb24_lq0_d10_aw3_af0_vz0"
+    return FailedBreakoutUniverseReport(
+        report_id="failed_breakout_universe_runner_test",
+        thesis_id="thesis_runner",
+        signal_id="signal_runner",
+        strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+        symbols=["BTC/USDT:USDT"],
+        timeframes=["5m"],
+        completed_cells=1,
+        min_market_confirmations=1,
+        robust_trial_ids=[trial_id],
+        best_trial_frequency={trial_id: 1},
+        cells=[
+            FailedBreakoutUniverseCell(
+                report_id="failed_breakout_btc_runner_test",
+                symbol="BTC/USDT:USDT",
+                timeframe="5m",
+                completed_trials=1,
+                robust_trial_count=1,
+                simple_failed_breakout_total_return=-0.01,
+                simple_failed_breakout_trade_count=6,
+                best_trial_id=trial_id,
+                best_trial_trade_count=6,
+                best_trial_total_return=0.01,
+                best_trial_profit_factor=1.2,
+            )
+        ],
+    )
 
 
 def _sample_trades(strategy_id: str) -> list[TradeRecord]:
