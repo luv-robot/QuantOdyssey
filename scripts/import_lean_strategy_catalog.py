@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--refresh-clone", action="store_true")
     parser.add_argument("--max-files", type=int)
     parser.add_argument("--exclude-regression", action="store_true")
+    parser.add_argument("--language", choices=["python", "csharp"])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--save-to-db", action="store_true")
     return parser.parse_args()
@@ -35,6 +36,7 @@ def main() -> int:
         repo_url=args.clone_url,
         max_files=args.max_files,
         include_regression=not args.exclude_regression,
+        language=args.language,
     )
     payload = {
         "report": report.model_dump(mode="json"),

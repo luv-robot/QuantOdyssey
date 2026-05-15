@@ -47,6 +47,12 @@ Limit the scan during smoke tests:
 python scripts/import_lean_strategy_catalog.py --max-files 50 --output artifacts/lean_catalog_smoke.json
 ```
 
+Prioritize Python samples when looking for portable baseline material:
+
+```bash
+python scripts/import_lean_strategy_catalog.py --language python --max-files 100 --save-to-db
+```
+
 ## Product Use
 
 Imported records appear under the Dashboard `Strategy Catalog` tab.

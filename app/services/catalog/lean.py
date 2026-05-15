@@ -26,8 +26,14 @@ def build_lean_strategy_catalog(
     repo_url: str = LEAN_REPO_URL,
     max_files: int | None = None,
     include_regression: bool = True,
+    language: StrategyCatalogLanguage | str | None = None,
 ) -> tuple[StrategyCatalogReport, list[StrategyCatalogItem]]:
-    files = _lean_algorithm_files(lean_root, include_regression=include_regression)
+    language_filter = StrategyCatalogLanguage(language) if language is not None else None
+    files = _lean_algorithm_files(
+        lean_root,
+        include_regression=include_regression,
+        language=language_filter,
+    )
     if max_files is not None:
         files = files[:max_files]
     items = [_catalog_item_from_file(path, lean_root, repo_url) for path in files]
@@ -55,20 +61,32 @@ def build_lean_strategy_catalog(
     return report, items
 
 
-def _lean_algorithm_files(lean_root: Path, *, include_regression: bool) -> list[Path]:
-    search_roots = [lean_root / "Algorithm.Python", lean_root / "Algorithm.CSharp"]
+def _lean_algorithm_files(
+    lean_root: Path,
+    *,
+    include_regression: bool,
+    language: StrategyCatalogLanguage | None,
+) -> list[Path]:
+    search_roots = [
+        (lean_root / "Algorithm.Python", StrategyCatalogLanguage.PYTHON),
+        (lean_root / "Algorithm.CSharp", StrategyCatalogLanguage.CSHARP),
+    ]
     files: list[Path] = []
-    for root in search_roots:
+    for root, root_language in search_roots:
+        if language is not None and root_language != language:
+            continue
         if not root.exists():
             continue
+        root_files: list[Path] = []
         for pattern in ("*.py", "*.cs"):
             for path in root.rglob(pattern):
                 if path.name.startswith("_"):
                     continue
                 if not include_regression and "Regression" in path.name:
                     continue
-                files.append(path)
-    return sorted(files, key=lambda item: str(item).lower())
+                root_files.append(path)
+        files.extend(sorted(root_files, key=lambda item: str(item).lower()))
+    return files
 
 
 def _catalog_item_from_file(path: Path, lean_root: Path, repo_url: str) -> StrategyCatalogItem:

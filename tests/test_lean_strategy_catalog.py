@@ -38,6 +38,34 @@ class RsiCryptoAlgorithm(QCAlgorithm):
     assert "baseline_candidate" in item.suggested_roles
 
 
+def test_lean_catalog_max_files_prioritizes_python_samples(tmp_path: Path) -> None:
+    python_dir = tmp_path / "Algorithm.Python"
+    csharp_dir = tmp_path / "Algorithm.CSharp"
+    python_dir.mkdir()
+    csharp_dir.mkdir()
+    (python_dir / "PythonTemplate.py").write_text("class PythonTemplate(QCAlgorithm):\n    pass\n", encoding="utf-8")
+    (csharp_dir / "CSharpTemplate.cs").write_text("public class CSharpTemplate : QCAlgorithm {}", encoding="utf-8")
+
+    report, items = build_lean_strategy_catalog(tmp_path, max_files=1)
+
+    assert report.item_count == 1
+    assert items[0].language == StrategyCatalogLanguage.PYTHON
+
+
+def test_lean_catalog_can_filter_to_python_language(tmp_path: Path) -> None:
+    python_dir = tmp_path / "Algorithm.Python"
+    csharp_dir = tmp_path / "Algorithm.CSharp"
+    python_dir.mkdir()
+    csharp_dir.mkdir()
+    (python_dir / "PythonTemplate.py").write_text("class PythonTemplate(QCAlgorithm):\n    pass\n", encoding="utf-8")
+    (csharp_dir / "CSharpTemplate.cs").write_text("public class CSharpTemplate : QCAlgorithm {}", encoding="utf-8")
+
+    _, items = build_lean_strategy_catalog(tmp_path, language="python")
+
+    assert len(items) == 1
+    assert items[0].language == StrategyCatalogLanguage.PYTHON
+
+
 def test_lean_catalog_marks_csharp_options_as_high_difficulty(tmp_path: Path) -> None:
     csharp_dir = tmp_path / "Algorithm.CSharp"
     csharp_dir.mkdir()
