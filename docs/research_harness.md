@@ -72,6 +72,10 @@ regime shifts, failure findings, data gaps, watchlist candidates, and ReviewSess
 These items remain `suggested` until the human accepts, edits, rejects, archives, or converts them
 into official theses/tasks.
 
+`ResearchScratchpadEvent` is the chronological audit layer. Harness and future agents should append
+tool calls, LLM calls, budget decisions, task creation, backtest outputs, ReviewSessions, and findings
+to `.qo/scratchpad/<run_id>.jsonl` so a research run can be replayed after the fact.
+
 The first MVP does not execute expensive optimizer/hyperopt jobs automatically. It records bounded
 `parameter_sensitivity_test` tasks and marks larger search runs as approval-required. Optimizer is
 for robustness evidence, not alpha discovery or automatic strategy rewriting.
@@ -110,3 +114,19 @@ L3: generate findings and next tasks automatically
 L4: recommend promotion or retirement
 L5: paper/live/capital remains human-gated
 ```
+
+## Agent Quality Supervision
+
+Agent Eval Suite tests whether the AI research system itself obeys research discipline. It is
+admin-facing quality control, not a strategy edge detector.
+
+```text
+AgentEvalCase
+-> AgentEvalCaseResult
+-> AgentEvalRun
+-> Agent Quality Console / Supervisor Chat
+```
+
+The Supervisor may flag ReviewSessions, ResearchTasks, prompts, skills, or scratchpad traces for
+human review. It cannot promote strategies, publish private artifacts, change risk budgets, or bypass
+Harness budget controls.

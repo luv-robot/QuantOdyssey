@@ -1,3 +1,9 @@
+from app.models.agent_eval import (
+    AgentEvalCase,
+    AgentEvalCaseResult,
+    AgentEvalRun,
+    AgentEvalTarget,
+)
 from app.models.backtest import (
     BacktestReport,
     BacktestStatus,
@@ -20,6 +26,9 @@ from app.models.harness import (
     FailedBreakoutSensitivityTrial,
     FailedBreakoutUniverseCell,
     FailedBreakoutUniverseReport,
+    HarnessBudgetDecision,
+    HarnessBudgetDecisionAction,
+    HarnessBudgetPolicy,
     RegimeBucketStats,
     RegimeCoverageReport,
     ResearchFinding,
@@ -93,6 +102,7 @@ from app.models.review import (
 from app.models.research_asset import ResearchAssetIndexEntry
 from app.models.resource_control import ResourceBudgetReport
 from app.models.robustness import RobustnessReport
+from app.models.scratchpad import ResearchScratchpadEvent, ResearchScratchpadRun, ScratchpadEventType
 from app.models.research import (
     CandidateRankingResult,
     DataSufficiencyLevel,
@@ -135,6 +145,10 @@ from app.models.validation_suite import (
 from app.models.workflow import WorkflowRun, WorkflowState
 
 __all__ = [
+    "AgentEvalCase",
+    "AgentEvalCaseResult",
+    "AgentEvalRun",
+    "AgentEvalTarget",
     "BacktestReport",
     "BacktestStatus",
     "AggregateTrade",
@@ -152,6 +166,9 @@ __all__ = [
     "DataQualityFlag",
     "DataQualityReport",
     "FundingRatePoint",
+    "HarnessBudgetDecision",
+    "HarnessBudgetDecisionAction",
+    "HarnessBudgetPolicy",
     "EnhancedReviewMetrics",
     "EvaluationType",
     "EventEpisode",
@@ -196,6 +213,8 @@ __all__ = [
     "ResearchFinding",
     "ResearchFindingSeverity",
     "ResearchHarnessCycle",
+    "ResearchScratchpadEvent",
+    "ResearchScratchpadRun",
     "PortfolioExposure",
     "PortfolioRiskFinding",
     "PortfolioRiskLimits",
@@ -230,6 +249,7 @@ __all__ = [
     "RegimeBucketStats",
     "RegimeCoverageReport",
     "SignalType",
+    "ScratchpadEventType",
     "StrategyManifest",
     "StrategyCandidate",
     "StrategyFamily",

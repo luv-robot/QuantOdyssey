@@ -14,6 +14,7 @@ from app.models import (
     ReviewSession,
     StrategyFamily,
 )
+from app.services.harness.budget import apply_harness_budget_guardrails
 
 
 def build_research_harness_cycle(
@@ -58,7 +59,7 @@ def build_research_harness_cycle(
             )
         )
 
-    tasks = list(tasks_by_key.values())
+    tasks, _budget_decisions = apply_harness_budget_guardrails(list(tasks_by_key.values()))
     for index, finding in enumerate(findings):
         if not finding.next_task_ids:
             findings[index] = finding.model_copy(update={"next_task_ids": [task.task_id for task in tasks]})

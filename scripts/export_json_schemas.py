@@ -6,6 +6,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.models import (
+    AgentEvalCase,
+    AgentEvalCaseResult,
+    AgentEvalRun,
     AlternativeDataMetric,
     BacktestReport,
     BacktestValidationReport,
@@ -26,6 +29,8 @@ from app.models import (
     ExperimentManifest,
     ExperimentQueueItem,
     FundingRatePoint,
+    HarnessBudgetDecision,
+    HarnessBudgetPolicy,
     MarketSignal,
     MarketRegimeSnapshot,
     ModelResponseLog,
@@ -52,6 +57,8 @@ from app.models import (
     ResourceBudgetReport,
     ResearchFinding,
     ResearchHarnessCycle,
+    ResearchScratchpadEvent,
+    ResearchScratchpadRun,
     ResearchTask,
     ResearchThesis,
     ThesisInboxItem,
@@ -79,6 +86,9 @@ from app.models import (
 
 
 MODELS = [
+    AgentEvalCase,
+    AgentEvalCaseResult,
+    AgentEvalRun,
     MarketSignal,
     MarketRegimeSnapshot,
     OhlcvCandle,
@@ -119,9 +129,13 @@ MODELS = [
     FailedBreakoutUniverseReport,
     ExperimentManifest,
     ExperimentQueueItem,
+    HarnessBudgetPolicy,
+    HarnessBudgetDecision,
     ResourceBudgetReport,
     ResearchFinding,
     ResearchHarnessCycle,
+    ResearchScratchpadRun,
+    ResearchScratchpadEvent,
     ResearchTask,
     ThesisInboxItem,
     PromptLog,

@@ -11,6 +11,7 @@ build/
 caddy/auth.caddy
 schemas/
 logs/
+.qo/scratchpad/
 *.sqlite3
 
 freqtrade_user_data/backtest_results/

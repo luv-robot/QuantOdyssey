@@ -40,6 +40,12 @@ class ResearchFindingSeverity(str, Enum):
     HIGH = "high"
 
 
+class HarnessBudgetDecisionAction(str, Enum):
+    ALLOW = "allow"
+    REQUIRE_APPROVAL = "require_approval"
+    BLOCK = "block"
+
+
 class StrategyScreeningAction(str, Enum):
     DEEPEN_VALIDATION = "deepen_validation"
     UPGRADE_DATA = "upgrade_data"
@@ -71,6 +77,28 @@ class ResearchTask(BaseModel):
     approval_required: bool = False
     autonomy_level: int = Field(default=1, ge=0, le=5)
     evidence_refs: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class HarnessBudgetPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_automatic_task_cost: int = Field(default=50, ge=1)
+    max_optimizer_trials_per_strategy: int = Field(default=100, ge=1)
+    max_repeated_failure_loops: int = Field(default=3, ge=1)
+    max_autonomy_level_without_approval: int = Field(default=2, ge=0, le=5)
+
+
+class HarnessBudgetDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    action: HarnessBudgetDecisionAction
+    reasons: list[str] = Field(default_factory=list)
+    original_status: ResearchTaskStatus
+    resulting_status: ResearchTaskStatus
+    approval_required: bool
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
