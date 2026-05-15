@@ -234,139 +234,109 @@ def render_research_pipeline(engine, database_url: str) -> None:
 
 
 def render_research_workbench(engine, database_url: str) -> None:
-    st.subheader("Research Workbench")
-    recent_theses = recent_records(engine, "research_theses", limit=8)
-    latest_orderflow = _latest_record(engine, "strategy_family_orderflow_acceptance_reports")
-    latest_review_session = _latest_record(engine, "review_sessions")
-    latest_walk_forward = _latest_record(engine, "strategy_family_walk_forward_reports")
-    latest_monte_carlo = _latest_record(engine, "strategy_family_monte_carlo_reports")
-    latest_tasks = recent_records(engine, "research_tasks", limit=20)
+    st.subheader("Personal Research Dashboard")
+    recent_theses = recent_records(engine, "research_theses", limit=30)
+    strategies = recent_records(engine, "strategies", limit=300)
+    backtests = recent_records(engine, "backtests", limit=300)
+    baselines = recent_records(engine, "baseline_comparisons", limit=300)
+    robustness_reports = recent_records(engine, "robustness_reports", limit=300)
+    review_sessions = recent_records(engine, "review_sessions", limit=300)
+    latest_tasks = recent_records(engine, "research_tasks", limit=40)
+    board, regime, error = _build_dashboard_baseline_regime()
 
-    columns = st.columns(5)
-    columns[0].metric("Theses", _metric_count(engine, "research_theses"))
-    columns[1].metric("Review Sessions", _metric_count(engine, "review_sessions"))
-    columns[2].metric("Open Tasks", _open_task_count(latest_tasks))
-    columns[3].metric("Orderflow Bars", _metric_count(engine, "orderflow_bars"))
-    columns[4].metric(
-        "OF Events",
-        0 if latest_orderflow is None else latest_orderflow.get("events_with_orderflow", 0),
-    )
+    left_col, center_col, right_col = st.columns([0.82, 1.55, 0.86], gap="large")
+    selected_thesis = recent_theses[0] if recent_theses else None
+    selected_strategy = None
 
-    queue_col, evidence_col, action_col = st.columns([0.85, 1.2, 0.95])
-    with queue_col:
-        st.write("### Research Queue")
-        if recent_theses:
-            for thesis in recent_theses[:5]:
-                st.write(f"**{thesis.get('title', thesis.get('thesis_id'))}**")
-                st.caption(f"{thesis.get('status')} | {thesis.get('thesis_id')}")
+    with left_col:
+        st.write("### 导航")
+        if not recent_theses:
+            st.info("还没有 thesis。请到 `Run Pipeline` 提交第一个假设。")
         else:
-            st.info("No thesis records yet.")
-        st.write("### Harness Backlog")
-        if latest_tasks:
-            for task in latest_tasks[:6]:
-                status = task.get("status")
-                task_type = task.get("task_type")
-                priority = task.get("priority_score")
-                if task.get("approval_required"):
-                    st.warning(f"{task_type} | priority {priority} | {status}")
-                else:
-                    st.info(f"{task_type} | priority {priority} | {status}")
-        else:
-            st.info("No recent harness tasks.")
+            thesis_options = {
+                f"{item.get('title', item.get('thesis_id'))} · {item.get('status', 'unknown')}": item
+                for item in recent_theses
+            }
+            selected_label = st.selectbox("我的 Thesis", list(thesis_options), label_visibility="collapsed")
+            selected_thesis = thesis_options[selected_label]
+            st.caption(f"`{selected_thesis.get('thesis_id')}`")
+            linked = _strategies_for_thesis(strategies, selected_thesis.get("thesis_id"))
+            st.write("**衍生可测试策略**")
+            if linked:
+                strategy_options = {
+                    f"{item.get('name', item.get('strategy_id'))} · {item.get('status', 'generated')}": item
+                    for item in linked
+                }
+                selected_strategy_label = st.radio(
+                    "策略",
+                    list(strategy_options),
+                    label_visibility="collapsed",
+                )
+                selected_strategy = strategy_options[selected_strategy_label]
+            else:
+                st.info("这个 thesis 还没有生成策略。")
+            with st.expander("Thesis → Strategy Tree", expanded=True):
+                for thesis in recent_theses[:8]:
+                    st.markdown(f"**{thesis.get('title', thesis.get('thesis_id'))}**")
+                    children = _strategies_for_thesis(strategies, thesis.get("thesis_id"))
+                    if not children:
+                        st.caption("└─ no strategy yet")
+                    for strategy in children[:5]:
+                        st.caption(f"└─ {strategy.get('name', strategy.get('strategy_id'))}")
 
-    with evidence_col:
-        st.write("### Baseline-Implied Regime")
-        board, regime, error = _build_dashboard_baseline_regime()
+    with center_col:
+        st.write("### 市场 Regime 要素评分")
         if error:
             st.warning(error)
-        elif board is not None and regime is not None:
-            regime_cols = st.columns(3)
-            regime_cols[0].metric("Regime", regime["regime_label"])
-            regime_cols[1].metric("Confidence", f"{regime['confidence']:.1%}")
-            regime_cols[2].metric("Best Baseline", board.get("best_family") or "n/a")
-            st.dataframe(
-                [
-                    {
-                        "baseline": row["strategy_family"],
-                        "return": row["total_return"],
-                        "profit_factor": row["profit_factor"],
-                        "sharpe": row["sharpe"],
-                        "max_drawdown": row["max_drawdown"],
-                        "trades": row["trades"],
-                        "positive_cells": row["positive_cell_count"],
-                        "tested_cells": row["tested_cell_count"],
-                    }
-                    for row in board["rows"]
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
-            st.write("**Regime Components**")
-            st.dataframe(
-                [
-                    {"component": name, "score": score}
-                    for name, score in regime.get("component_scores", {}).items()
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
-            for finding in regime.get("findings", []):
-                st.caption(finding)
+        elif regime:
+            _render_regime_score_bars(regime)
         else:
-            st.info("No baseline regime data available.")
+            st.info("暂无 regime 要素评分。")
 
-    with action_col:
-        st.write("### Evidence Court")
-        _render_compact_validation_card("Orderflow Acceptance", latest_orderflow)
-        _render_compact_validation_card("Walk Forward", latest_walk_forward)
-        _render_compact_validation_card("Monte Carlo", latest_monte_carlo)
-        st.write("### AI Review")
-        if latest_review_session:
-            maturity = latest_review_session.get("maturity_score") or {}
-            st.metric("Maturity Score", f"{maturity.get('overall_score', 0):.2f}")
-            evidence_against = latest_review_session.get("evidence_against") or []
-            blind_spots = latest_review_session.get("blind_spots") or []
-            questions = latest_review_session.get("ai_questions") or []
-            experiments = latest_review_session.get("next_experiments") or []
-            if evidence_against:
-                st.write("**Evidence Against**")
-                for claim in evidence_against[:3]:
-                    st.warning(claim.get("statement", "evidence against"))
-            if blind_spots:
-                st.write("**Blind Spots**")
-                for claim in blind_spots[:3]:
-                    st.info(claim.get("statement", "blind spot"))
-            if questions:
-                st.write("**AI Questions**")
-                for question in questions[:3]:
-                    st.caption(question.get("question", "question"))
-            if experiments:
-                st.write("**Next Experiments**")
-                for experiment in experiments[:3]:
-                    st.caption(experiment)
+        st.write("### 核心策略信息")
+        visible_strategies = (
+            _strategies_for_thesis(strategies, selected_thesis.get("thesis_id"))
+            if selected_thesis
+            else strategies[:10]
+        )
+        if visible_strategies:
+            rows = _strategy_summary_rows(
+                visible_strategies,
+                backtests=backtests,
+                baselines=baselines,
+                robustness_reports=robustness_reports,
+                review_sessions=review_sessions,
+            )
+            _render_strategy_summary_table(rows)
         else:
-            st.info("No ReviewSession records yet.")
+            st.info("暂无可汇总的策略。先运行 pipeline 生成候选策略。")
 
-    st.write("### Human-Assist Penetration Snapshot")
-    snapshot = _human_assist_snapshot(
-        board=board if "board" in locals() else None,
-        regime=regime if "regime" in locals() else None,
-        latest_orderflow=latest_orderflow,
-        latest_review_session=latest_review_session,
-        latest_tasks=latest_tasks,
-    )
-    score_cols = st.columns(4)
-    score_cols[0].metric("Helpfulness", f"{snapshot['score']:.0f}/100")
-    score_cols[1].metric("Baseline Pressure", snapshot["baseline_pressure"])
-    score_cols[2].metric("Review Depth", snapshot["review_depth"])
-    score_cols[3].metric("Next-Step Clarity", snapshot["next_step_clarity"])
-    for item in snapshot["findings"]:
-        if item["level"] == "good":
-            st.success(item["message"])
-        elif item["level"] == "warn":
-            st.warning(item["message"])
-        else:
-            st.info(item["message"])
+        if selected_strategy:
+            st.write("### 选中策略摘要")
+            strategy_id = selected_strategy.get("strategy_id")
+            latest_backtest = _latest_by_field(backtests, "strategy_id", strategy_id)
+            latest_review = _latest_by_field(review_sessions, "strategy_id", strategy_id)
+            metrics = st.columns(5)
+            metrics[0].metric("测试期", "-" if not latest_backtest else latest_backtest.get("timerange", "-"))
+            metrics[1].metric("Return", _fmt_pct(None if not latest_backtest else latest_backtest.get("total_return")))
+            metrics[2].metric("PF", _fmt_num(None if not latest_backtest else latest_backtest.get("profit_factor")))
+            metrics[3].metric("MDD", _fmt_pct(None if not latest_backtest else latest_backtest.get("max_drawdown")))
+            metrics[4].metric("AI Review", _short_review(latest_review))
+            st.caption("详细 evidence、validation、AI Review 请进入 `Run Detail` 查看。")
+
+    with right_col:
+        st.write("### 系统行为")
+        scoped_tasks = _tasks_for_scope(
+            latest_tasks,
+            thesis_id=None if not selected_thesis else selected_thesis.get("thesis_id"),
+            strategy_id=None if not selected_strategy else selected_strategy.get("strategy_id"),
+        )
+        _render_harness_progress(scoped_tasks or latest_tasks[:8])
+
+        st.write("### 快速入口")
+        st.info("Run Detail：查看策略证据链")
+        st.info("Metric Audit：查看指标公式")
+        st.info("System Status：检查数据服务")
 
 
 def render_metric_audit_registry() -> None:
@@ -409,6 +379,62 @@ def render_metric_audit_registry() -> None:
             st.write("**External References**")
             for reference in item.external_references:
                 st.markdown(f"- [{reference['name']}]({reference['url']}): {reference['note']}")
+
+
+def render_global_ai_assistant(engine) -> None:
+    st.markdown("---")
+    st.write("### 全能研究助手")
+    st.caption("可以问当前页面、已有数据、指标公式、策略证据链或下一步任务。当前版本优先做站内路由和数据摘要。")
+    with st.form("global_ai_assistant_form"):
+        question = st.text_input(
+            "Ask Quant Odyssey",
+            placeholder="例如：这个策略为什么没通过？现在市场 regime 更偏什么？profit factor 怎么算？",
+            label_visibility="collapsed",
+        )
+        submitted = st.form_submit_button("提问")
+    if not submitted or not question.strip():
+        return
+    st.info(_assistant_routing_answer(engine, question.strip()))
+
+
+def _assistant_routing_answer(engine, question: str) -> str:
+    lower = question.lower()
+    theses = recent_records(engine, "research_theses", limit=3)
+    tasks = recent_records(engine, "research_tasks", limit=5)
+    board, regime, _ = _build_dashboard_baseline_regime()
+    if any(key in lower for key in ["regime", "市场", "环境", "行情"]):
+        if not regime:
+            return "目前还没有可用的 regime 要素评分。请先检查 `Research Workbench` 中的 Market Regime 区域或运行 baseline-regime scan。"
+        components = regime.get("component_scores", {})
+        leader = max(components.items(), key=lambda item: item[1], default=("unknown", 0))
+        return (
+            f"当前应看作要素评分而非确定结论。领先因子是 `{leader[0]}`，分数 {leader[1]:.1f}。"
+            "请看 `Research Workbench` 中间的 Regime 要素评分；需要公式口径时转到 `Metric Audit`。"
+        )
+    if any(key in lower for key in ["profit factor", "pf", "公式", "指标", "drawdown", "sharpe"]):
+        return (
+            "指标公式已集中到 `Metric Audit`。PF 使用 completed trade winners / completed trade losers；"
+            "最大回撤来自 equity curve 峰谷，不再用最终收益或单个 cell 代替。"
+        )
+    if any(key in lower for key in ["策略", "strategy", "review", "为什么", "通过"]):
+        latest = theses[0].get("title") if theses else "最新 thesis"
+        return (
+            f"请先在左侧 thesis→strategy 树选择策略；中间表只显示摘要。"
+            f"要看 `{latest}` 的完整 evidence、validation summary、AI Review，请进入上方 `Run Detail` 标签。"
+        )
+    if any(key in lower for key in ["任务", "harness", "进度", "执行"]):
+        if not tasks:
+            return "Harness 暂无任务。提交 thesis 或运行 pipeline 后，右侧 `系统行为` 会显示任务进度。"
+        return (
+            f"当前最近有 {len(tasks)} 个 harness 任务。右侧 `系统行为` 显示执行进度；"
+            "需要原始 payload 可以打开 `Human Approval` 或相关数据标签。"
+        )
+    if board and board.get("best_family"):
+        return (
+            f"我建议先看 `Research Workbench`：当前最佳通用 baseline 是 `{board['best_family']}`。"
+            "若你的问题涉及策略细节，去 `Run Detail`；涉及计算口径，去 `Metric Audit`；涉及系统健康，去 `System Status`。"
+        )
+    return "我建议从 `Research Workbench` 开始；它会把导航、策略摘要、系统行为和可追问入口放在同一页。"
 
 
 def render_research_run_detail(engine) -> None:
@@ -628,6 +654,191 @@ def _metric_count(engine, table_name: str) -> int | str:
 
 def _open_task_count(tasks: list[dict]) -> int:
     return sum(1 for task in tasks if task.get("status") not in {"completed", "cancelled"})
+
+
+def _strategies_for_thesis(strategies: list[dict], thesis_id: str | None) -> list[dict]:
+    if not thesis_id:
+        return []
+    return [item for item in strategies if item.get("thesis_id") == thesis_id]
+
+
+def _latest_by_field(records: list[dict], field: str, value: str | None) -> dict | None:
+    if not value:
+        return None
+    for record in records:
+        if record.get(field) == value:
+            return record
+    return None
+
+
+def _strategy_summary_rows(
+    strategies: list[dict],
+    *,
+    backtests: list[dict],
+    baselines: list[dict],
+    robustness_reports: list[dict],
+    review_sessions: list[dict],
+) -> list[dict]:
+    rows = []
+    for strategy in strategies:
+        strategy_id = strategy.get("strategy_id")
+        backtest = _latest_by_field(backtests, "strategy_id", strategy_id)
+        baseline = _latest_by_field(baselines, "strategy_id", strategy_id)
+        robustness = _latest_by_field(robustness_reports, "strategy_id", strategy_id)
+        review = _latest_by_field(review_sessions, "strategy_id", strategy_id)
+        rows.append(
+            {
+                "strategy": strategy.get("name", strategy_id),
+                "status": strategy.get("status", "-"),
+                "timeframe": strategy.get("timeframe", "-"),
+                "test_period": "-" if not backtest else backtest.get("timerange", "-"),
+                "return": _fmt_pct(None if not backtest else backtest.get("total_return")),
+                "pf": _fmt_num(None if not backtest else backtest.get("profit_factor")),
+                "sharpe": _fmt_num(None if not backtest else backtest.get("sharpe")),
+                "mdd": _fmt_pct(None if not backtest else backtest.get("max_drawdown")),
+                "trades": "-" if not backtest else backtest.get("trades", "-"),
+                "validation": _short_validation(backtest, baseline, robustness),
+                "ai_review": _short_review(review),
+            }
+        )
+    return rows
+
+
+def _render_strategy_summary_table(rows: list[dict]) -> None:
+    import pandas as pd
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        st.info("暂无策略摘要。")
+        return
+    style = (
+        frame.style.apply(
+            lambda row: ["background-color: #fbfbfa" if row.name % 2 else "background-color: #ffffff"] * len(row),
+            axis=1,
+        )
+        .set_table_styles(
+            [
+                {"selector": "th", "props": [("border", "0"), ("font-weight", "700")]},
+                {"selector": "td", "props": [("border", "0"), ("padding", "8px 10px")]},
+            ]
+        )
+        .hide(axis="index")
+    )
+    st.dataframe(style, use_container_width=True, hide_index=True)
+
+
+def _render_regime_score_bars(regime: dict) -> None:
+    scores = regime.get("component_scores") or {}
+    labels = {
+        "passive_beta": "Passive Beta",
+        "directional_momentum": "Directional Momentum",
+        "trend_following": "Trend Following",
+        "range_harvesting": "Range / Grid",
+        "defensive_cash": "Defensive Cash",
+    }
+    if not scores:
+        st.info("No component scores available.")
+        return
+    st.caption("这是 baseline 反推的要素评分，不是确定性 regime 标签。")
+    for key, score in sorted(scores.items(), key=lambda item: -item[1]):
+        left, right = st.columns([0.75, 0.25])
+        left.write(labels.get(key, key.replace("_", " ").title()))
+        right.write(f"{score:.1f}")
+        st.progress(max(0.0, min(1.0, float(score) / 100)))
+    findings = regime.get("findings") or []
+    if findings:
+        st.caption(findings[0])
+
+
+def _tasks_for_scope(tasks: list[dict], *, thesis_id: str | None, strategy_id: str | None) -> list[dict]:
+    scoped = []
+    for task in tasks:
+        if strategy_id and task.get("strategy_id") == strategy_id:
+            scoped.append(task)
+        elif thesis_id and task.get("thesis_id") == thesis_id:
+            scoped.append(task)
+    return scoped
+
+
+def _render_harness_progress(tasks: list[dict]) -> None:
+    if not tasks:
+        st.info("Harness 暂无近期任务。")
+        return
+    status_counts: dict[str, int] = {}
+    for task in tasks:
+        status = task.get("status", "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    cols = st.columns(min(3, max(1, len(status_counts))))
+    for col, (status, count) in zip(cols, sorted(status_counts.items())):
+        col.metric(status.replace("_", " ").title(), count)
+    for task in tasks[:8]:
+        status = task.get("status", "unknown")
+        task_type = task.get("task_type", "task")
+        priority = float(task.get("priority_score") or 0)
+        label = f"{_status_symbol(status)} {task_type.replace('_', ' ')}"
+        if task.get("approval_required"):
+            st.warning(label)
+        elif status in {"completed", "approved"}:
+            st.success(label)
+        elif status in {"blocked", "rejected"}:
+            st.error(label)
+        else:
+            st.info(label)
+        st.progress(max(0.0, min(1.0, priority / 100)))
+        st.caption(task.get("hypothesis", "")[:180])
+
+
+def _status_symbol(status: str) -> str:
+    return {
+        "running": "▶",
+        "completed": "✓",
+        "approved": "✓",
+        "blocked": "!",
+        "rejected": "!",
+        "proposed": "•",
+    }.get(status, "•")
+
+
+def _short_validation(backtest: dict | None, baseline: dict | None, robustness: dict | None) -> str:
+    if robustness:
+        return "robust ok" if robustness.get("passed") else "robust weak"
+    if baseline:
+        return "beats baseline" if baseline.get("outperformed_best_baseline") else "baseline fail"
+    if backtest:
+        return str(backtest.get("status", "backtested"))
+    return "pending"
+
+
+def _short_review(review: dict | None) -> str:
+    if not review:
+        return "pending"
+    maturity = review.get("maturity_score") or {}
+    blockers = maturity.get("blockers") or []
+    if blockers:
+        return "has blockers"
+    stage = maturity.get("stage")
+    if stage:
+        return str(stage)
+    score = maturity.get("overall_score")
+    return "reviewed" if score is None else f"{score:.0f}/100"
+
+
+def _fmt_pct(value) -> str:
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.2%}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _fmt_num(value) -> str:
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "-"
 
 
 @st.cache_data(ttl=300)
@@ -876,25 +1087,34 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def render_dashboard_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        .block-container { padding-top: 2rem; }
+        div[data-testid="stMetric"] {
+            background: #ffffff;
+            border: 1px solid #e3e6ec;
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        div[data-testid="stAlert"] {
+            border-radius: 8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="Quant Odyssey", layout="wide")
-    st.title("Quant Odyssey Research Workbench")
+    render_dashboard_styles()
+    st.title("Quant Odyssey Personal Dashboard")
+    st.caption("[公开主页](/) · 左侧导航，中间策略判断，右侧系统行为，下方随时提问。")
 
     engine, database_url = connect_database()
     st.caption(f"Database: `{database_url}`")
-
-    summary_tables = [
-        "research_theses",
-        "review_sessions",
-        "research_tasks",
-        "orderflow_bars",
-        "backtests",
-        "reviews",
-    ]
-    columns = st.columns(len(summary_tables))
-    for column, table in zip(columns, summary_tables):
-        value = table_count(engine, table)
-        column.metric(table.replace("_", " ").title(), "n/a" if value is None else value)
 
     tabs = st.tabs(
         [
@@ -1009,6 +1229,8 @@ def main() -> None:
             if check.details:
                 with st.expander(f"{check.name} details"):
                     st.json(check.details)
+
+    render_global_ai_assistant(engine)
 
 
 if __name__ == "__main__":

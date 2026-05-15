@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quant Odyssey</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #596579;
+      --line: #d8dde6;
+      --paper: #f7f7f4;
+      --panel: #ffffff;
+      --teal: #126b6f;
+      --leaf: #4e7f45;
+      --amber: #b7791f;
+      --rose: #a44255;
+      --violet: #5d5a9c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+    }
+    a { color: inherit; text-decoration: none; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 68px;
+      padding: 0 5vw;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 247, 244, 0.94);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand { font-weight: 760; letter-spacing: 0; font-size: 18px; }
+    .nav { display: flex; align-items: center; gap: 22px; color: var(--muted); font-size: 14px; }
+    .login {
+      color: #fff;
+      background: var(--ink);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-weight: 650;
+    }
+    .hero {
+      min-height: 82vh;
+      display: grid;
+      grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.25fr);
+      gap: 42px;
+      align-items: center;
+      padding: 7vh 5vw 5vh;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      font-size: clamp(42px, 6.3vw, 92px);
+      line-height: 0.96;
+      margin: 0 0 22px;
+      letter-spacing: 0;
+      max-width: 880px;
+    }
+    .lead {
+      font-size: 20px;
+      line-height: 1.55;
+      color: var(--muted);
+      max-width: 680px;
+      margin-bottom: 30px;
+    }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .primary {
+      color: #fff;
+      background: var(--teal);
+      padding: 13px 18px;
+      border-radius: 6px;
+      font-weight: 720;
+    }
+    .secondary {
+      border: 1px solid var(--line);
+      padding: 12px 17px;
+      border-radius: 6px;
+      font-weight: 650;
+      background: #fff;
+    }
+    .regime-atlas {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      box-shadow: 0 18px 60px rgba(23, 32, 42, 0.08);
+    }
+    .atlas-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+    .atlas-title { font-size: 15px; font-weight: 780; }
+    .atlas-note { color: var(--muted); font-size: 13px; }
+    .months {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .month {
+      min-height: 142px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      gap: 5px;
+      padding: 8px 7px;
+      border: 1px solid #e7e9ee;
+      border-radius: 6px;
+      background: #fbfbfa;
+    }
+    .bar { border-radius: 3px; min-height: 8px; }
+    .trend { background: var(--teal); }
+    .range { background: var(--leaf); }
+    .vol { background: var(--amber); }
+    .risk { background: var(--rose); }
+    .beta { background: var(--violet); }
+    .month small { color: var(--muted); font-size: 11px; margin-top: 5px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 13px; }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: -1px;
+      background: var(--teal);
+    }
+    .legend .range-key::before { background: var(--leaf); }
+    .legend .vol-key::before { background: var(--amber); }
+    .legend .risk-key::before { background: var(--rose); }
+    .legend .beta-key::before { background: var(--violet); }
+    section { padding: 64px 5vw; border-bottom: 1px solid var(--line); }
+    .section-title {
+      font-size: clamp(28px, 3vw, 44px);
+      margin: 0 0 14px;
+      letter-spacing: 0;
+    }
+    .section-copy { color: var(--muted); line-height: 1.7; max-width: 780px; font-size: 17px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 30px;
+    }
+    .stat, .proof {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 36px;
+      margin-bottom: 6px;
+    }
+    .stat span, .proof p { color: var(--muted); line-height: 1.55; }
+    .proof-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: center;
+      margin-top: 30px;
+    }
+    .proof-mark {
+      min-height: 260px;
+      background:
+        linear-gradient(90deg, rgba(23,32,42,.08) 1px, transparent 1px),
+        linear-gradient(rgba(23,32,42,.08) 1px, transparent 1px),
+        #fff;
+      background-size: 34px 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+    }
+    .proof-mark div {
+      width: min(280px, 70%);
+      aspect-ratio: 1;
+      border: 12px solid var(--ink);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-weight: 820;
+      font-size: 58px;
+      color: var(--teal);
+      background: #f7f7f4;
+    }
+    footer {
+      padding: 34px 5vw;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 900px) {
+      .hero, .proof-grid, .grid { grid-template-columns: 1fr; }
+      .months { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .nav a:not(.login) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Quant Odyssey</a>
+    <nav class="nav">
+      <a href="#regime">Regime Atlas</a>
+      <a href="#researchers">Research Network</a>
+      <a href="#privacy">Privacy</a>
+      <a class="login" href="/app/">进入工作台</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" id="regime">
+      <div>
+        <h1>把一个点子，培育成参天大树。</h1>
+        <p class="lead">
+          Quant Odyssey 帮助独立量化研究者把自然语言假设转化为可测试策略，
+          用数据、baseline、regime、robustness 和 AI Review 持续审判它，而不是急着认同它。
+        </p>
+        <div class="cta-row">
+          <a class="primary" href="/app/">进入个人研究工作台</a>
+          <a class="secondary" href="#privacy">了解隐私保护</a>
+        </div>
+      </div>
+      <div class="regime-atlas" aria-label="Market regime state atlas">
+        <div class="atlas-head">
+          <div class="atlas-title">Market Regime State Atlas</div>
+          <div class="atlas-note">近几个月多要素评分，不给伪确定答案</div>
+        </div>
+        <div class="months">
+          <div class="month"><div class="bar beta" style="height:70px"></div><div class="bar trend" style="height:54px"></div><div class="bar range" style="height:22px"></div><small>Oct</small></div>
+          <div class="month"><div class="bar vol" style="height:48px"></div><div class="bar risk" style="height:36px"></div><div class="bar range" style="height:58px"></div><small>Nov</small></div>
+          <div class="month"><div class="bar trend" style="height:76px"></div><div class="bar beta" style="height:62px"></div><div class="bar vol" style="height:26px"></div><small>Dec</small></div>
+          <div class="month"><div class="bar range" style="height:68px"></div><div class="bar vol" style="height:42px"></div><div class="bar trend" style="height:25px"></div><small>Jan</small></div>
+          <div class="month"><div class="bar risk" style="height:52px"></div><div class="bar vol" style="height:78px"></div><div class="bar beta" style="height:34px"></div><small>Feb</small></div>
+          <div class="month"><div class="bar trend" style="height:82px"></div><div class="bar beta" style="height:74px"></div><div class="bar range" style="height:18px"></div><small>Mar</small></div>
+          <div class="month"><div class="bar beta" style="height:88px"></div><div class="bar trend" style="height:66px"></div><div class="bar risk" style="height:24px"></div><small>Apr</small></div>
+          <div class="month"><div class="bar trend" style="height:64px"></div><div class="bar vol" style="height:44px"></div><div class="bar range" style="height:28px"></div><small>May</small></div>
+        </div>
+        <div class="legend">
+          <span>Trend</span>
+          <span class="range-key">Range</span>
+          <span class="vol-key">Volatility</span>
+          <span class="risk-key">Risk-off</span>
+          <span class="beta-key">Passive beta</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="researchers">
+      <h2 class="section-title">这里聚集的是研究者，不是晒单者。</h2>
+      <p class="section-copy">
+        平台持续运行 thesis、策略变体、baseline、walk-forward、Monte Carlo、orderflow validation 与 AI Review。
+        每个点子都被迫回答：它优于什么？在哪种市场环境有效？失败是否可解释？下一步实验是什么？
+      </p>
+      <div class="grid">
+        <div class="stat"><strong>20+</strong><span>研究 thesis 与策略族持续沉淀</span></div>
+        <div class="stat"><strong>35k+</strong><span>orderflow bars 已进入验证资产库</span></div>
+        <div class="stat"><strong>100+</strong><span>回测、复盘与验证对象形成研究记忆</span></div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <h2 class="section-title">你的 alpha 不是平台的猎物。</h2>
+      <p class="section-copy">
+        Quant Odyssey 的长期路线是 private-first：策略细节默认属于用户。Arena 可以公开客观指标，
+        但不要求公开核心逻辑。未来通过零知识证明让用户证明“我确实跑过某种评测”，而不是交出 alpha。
+      </p>
+      <div class="proof-grid">
+        <div class="proof-mark"><div>ZK</div></div>
+        <div class="proof">
+          <h3>Proof-first, alpha-private</h3>
+          <p>公开：策略类型、自我描述、客观结果、评测证明。</p>
+          <p>私有：具体规则、参数、代码、研究记忆与失败路径。</p>
+          <p>原则：我们帮你验证，不复制你的边际认知。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Quant Odyssey</span>
+    <span>Autonomous research loop. Human-gated promotion. Zero autonomous capital allocation.</span>
+  </footer>
+</body>
+</html>
