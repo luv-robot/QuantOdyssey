@@ -19,6 +19,12 @@ from app.services.harness.intake import (
     build_thesis_intake_harness_cycle,
 )
 from app.services.harness.research_loop import build_research_harness_cycle
+from app.services.harness.runner import (
+    HarnessQueueRunSummary,
+    HarnessRunnerConfig,
+    HarnessTaskRunResult,
+    run_research_harness_queue,
+)
 from app.services.harness.scratchpad import (
     append_scratchpad_event,
     create_scratchpad_run,
@@ -49,6 +55,10 @@ __all__ = [
     "create_scratchpad_run",
     "mark_inbox_item_converted",
     "read_scratchpad_events",
+    "HarnessQueueRunSummary",
+    "HarnessRunnerConfig",
+    "HarnessTaskRunResult",
+    "run_research_harness_queue",
     "build_event_definition_universe_report",
     "build_failed_breakout_universe_report",
     "build_data_sufficiency_gate",
