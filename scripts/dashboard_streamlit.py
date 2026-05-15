@@ -21,6 +21,7 @@ from app.models import (  # noqa: E402
 )
 from app.services.operations import run_health_checks  # noqa: E402
 from app.services.agent_eval import build_builtin_agent_eval_cases, run_agent_eval_suite  # noqa: E402
+from app.services.assistant import build_dashboard_assistant_answer, build_dashboard_context  # noqa: E402
 from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
 from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
 from app.services.metrics import performance_metric_registry  # noqa: E402
@@ -56,6 +57,8 @@ KEY_TABLES = [
     "strategy_catalog_reports",
     "factor_formula_items",
     "factor_formula_catalog_reports",
+    "prompt_logs",
+    "model_response_logs",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",
@@ -351,44 +354,50 @@ def render_research_workbench(engine, database_url: str) -> None:
                         st.caption(f"└─ {strategy.get('name', strategy.get('strategy_id'))}")
 
     with center_col:
-        st.write("### 市场 Regime 要素评分")
-        if error:
-            st.warning(error)
-        elif regime:
-            _render_regime_score_bars(regime)
-        else:
-            st.info("暂无 regime 要素评分。")
+        upper_frame = st.container()
+        lower_frame = st.container()
+        with upper_frame:
+            st.write("### 市场 Regime 要素评分")
+            if error:
+                st.warning(error)
+            elif regime:
+                _render_regime_score_bars(regime)
+            else:
+                st.info("暂无 regime 要素评分。")
 
-        st.write("### 核心策略信息")
-        visible_strategies = (
-            _strategies_for_thesis(strategies, selected_thesis.get("thesis_id"))
-            if selected_thesis
-            else strategies[:10]
-        )
-        if visible_strategies:
-            rows = _strategy_summary_rows(
-                visible_strategies,
-                backtests=backtests,
-                baselines=baselines,
-                robustness_reports=robustness_reports,
-                review_sessions=review_sessions,
+            st.write("### 核心策略信息")
+            visible_strategies = (
+                _strategies_for_thesis(strategies, selected_thesis.get("thesis_id"))
+                if selected_thesis
+                else strategies[:10]
             )
-            _render_strategy_summary_table(rows)
-        else:
-            st.info("暂无可汇总的策略。先运行 pipeline 生成候选策略。")
+            if visible_strategies:
+                rows = _strategy_summary_rows(
+                    visible_strategies,
+                    backtests=backtests,
+                    baselines=baselines,
+                    robustness_reports=robustness_reports,
+                    review_sessions=review_sessions,
+                )
+                _render_strategy_summary_table(rows)
+            else:
+                st.info("暂无可汇总的策略。先运行 pipeline 生成候选策略。")
 
-        if selected_strategy:
-            st.write("### 选中策略摘要")
-            strategy_id = selected_strategy.get("strategy_id")
-            latest_backtest = _latest_by_field(backtests, "strategy_id", strategy_id)
-            latest_review = _latest_by_field(review_sessions, "strategy_id", strategy_id)
-            metrics = st.columns(5)
-            metrics[0].metric("测试期", "-" if not latest_backtest else latest_backtest.get("timerange", "-"))
-            metrics[1].metric("Return", _fmt_pct(None if not latest_backtest else latest_backtest.get("total_return")))
-            metrics[2].metric("PF", _fmt_num(None if not latest_backtest else latest_backtest.get("profit_factor")))
-            metrics[3].metric("MDD", _fmt_pct(None if not latest_backtest else latest_backtest.get("max_drawdown")))
-            metrics[4].metric("AI Review", _short_review(latest_review))
-            st.caption("详细 evidence、validation、AI Review 请进入 `Run Detail` 查看。")
+            if selected_strategy:
+                st.write("### 选中策略摘要")
+                strategy_id = selected_strategy.get("strategy_id")
+                latest_backtest = _latest_by_field(backtests, "strategy_id", strategy_id)
+                latest_review = _latest_by_field(review_sessions, "strategy_id", strategy_id)
+                metrics = st.columns(5)
+                metrics[0].metric("测试期", "-" if not latest_backtest else latest_backtest.get("timerange", "-"))
+                metrics[1].metric("Return", _fmt_pct(None if not latest_backtest else latest_backtest.get("total_return")))
+                metrics[2].metric("PF", _fmt_num(None if not latest_backtest else latest_backtest.get("profit_factor")))
+                metrics[3].metric("MDD", _fmt_pct(None if not latest_backtest else latest_backtest.get("max_drawdown")))
+                metrics[4].metric("AI Review", _short_review(latest_review))
+                st.caption("详细 evidence、validation、AI Review 请进入 `Run Detail` 查看。")
+
+        with lower_frame:
+            render_assistant_workspace(selected_thesis=selected_thesis, selected_strategy=selected_strategy)
 
     with right_col:
         st.write("### 系统行为")
@@ -403,6 +412,26 @@ def render_research_workbench(engine, database_url: str) -> None:
         st.info("Run Detail：查看策略证据链")
         st.info("Metric Audit：查看指标公式")
         st.info("System Status：检查数据服务")
+
+
+def render_assistant_workspace(selected_thesis: dict | None = None, selected_strategy: dict | None = None) -> None:
+    st.markdown('<div class="qod-assistant-workspace">', unsafe_allow_html=True)
+    st.write("### Assistant Workspace")
+    thesis_label = "未选择 thesis" if not selected_thesis else selected_thesis.get("title", selected_thesis.get("thesis_id"))
+    strategy_label = (
+        "未选择策略"
+        if not selected_strategy
+        else selected_strategy.get("name", selected_strategy.get("strategy_id"))
+    )
+    st.caption(f"当前上下文：{thesis_label} · {strategy_label}")
+    messages = st.session_state.get("qod_assistant_messages", [])
+    if not messages:
+        st.info("底部输入框会一直常驻。长回答会显示在这里，不挤占底部输入区。")
+    else:
+        for message in messages[-8:]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_metric_audit_registry() -> None:
@@ -657,60 +686,69 @@ def render_strategy_catalog(engine) -> None:
                 st.json(item)
 
 
-def render_global_ai_assistant(engine) -> None:
-    st.markdown("---")
-    st.write("### 全能研究助手")
-    st.caption("可以问当前页面、已有数据、指标公式、策略证据链或下一步任务。当前版本优先做站内路由和数据摘要。")
-    with st.form("global_ai_assistant_form"):
-        question = st.text_input(
-            "Ask Quant Odyssey",
-            placeholder="例如：这个策略为什么没通过？现在市场 regime 更偏什么？profit factor 怎么算？",
-            label_visibility="collapsed",
-        )
-        submitted = st.form_submit_button("提问")
-    if not submitted or not question.strip():
+def render_global_ai_assistant(engine, database_url: str) -> None:
+    st.markdown(
+        f"""
+        <div class="qod-assistant-dock">
+          <span class="qod-assistant-plus">+</span>
+          <span class="qod-assistant-label">Quant Odyssey Assistant</span>
+          <span class="qod-assistant-pill">DeepSeek V4</span>
+          <span class="qod-assistant-hint">已有数据会优先引导到内部页面</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if "qod_assistant_messages" not in st.session_state:
+        st.session_state.qod_assistant_messages = []
+
+    question = st.chat_input(
+        "问 Quant Odyssey：策略为什么被拒？现在 regime 如何？提交 thesis 要补什么？",
+        key="qod_global_chat_input",
+    )
+    if not question or not question.strip():
         return
-    st.info(_assistant_routing_answer(engine, question.strip()))
+
+    st.session_state.qod_assistant_messages.append({"role": "user", "content": question.strip()})
+    context = _build_assistant_context(engine)
+    repository = QuantRepository(database_url)
+    result = build_dashboard_assistant_answer(
+        question.strip(),
+        context=context,
+        repository=repository,
+    )
+    answer = result.answer
+    st.session_state.qod_assistant_messages.append({"role": "assistant", "content": answer})
+    st.rerun()
 
 
-def _assistant_routing_answer(engine, question: str) -> str:
-    lower = question.lower()
-    theses = recent_records(engine, "research_theses", limit=3)
-    tasks = recent_records(engine, "research_tasks", limit=5)
+def _build_assistant_context(engine) -> dict:
+    theses = recent_records(engine, "research_theses", limit=5)
+    tasks = recent_records(engine, "research_tasks", limit=8)
+    reviews = recent_records(engine, "review_sessions", limit=5)
     board, regime, _ = _build_dashboard_baseline_regime()
-    if any(key in lower for key in ["regime", "市场", "环境", "行情"]):
-        if not regime:
-            return "目前还没有可用的 regime 要素评分。请先检查 `Research Workbench` 中的 Market Regime 区域或运行 baseline-regime scan。"
-        components = regime.get("component_scores", {})
-        leader = max(components.items(), key=lambda item: item[1], default=("unknown", 0))
-        return (
-            f"当前应看作要素评分而非确定结论。领先因子是 `{leader[0]}`，分数 {leader[1]:.1f}。"
-            "请看 `Research Workbench` 中间的 Regime 要素评分；需要公式口径时转到 `Metric Audit`。"
-        )
-    if any(key in lower for key in ["profit factor", "pf", "公式", "指标", "drawdown", "sharpe"]):
-        return (
-            "指标公式已集中到 `Metric Audit`。PF 使用 completed trade winners / completed trade losers；"
-            "最大回撤来自 equity curve 峰谷，不再用最终收益或单个 cell 代替。"
-        )
-    if any(key in lower for key in ["策略", "strategy", "review", "为什么", "通过"]):
-        latest = theses[0].get("title") if theses else "最新 thesis"
-        return (
-            f"请先在左侧 thesis→strategy 树选择策略；中间表只显示摘要。"
-            f"要看 `{latest}` 的完整 evidence、validation summary、AI Review，请进入上方 `Run Detail` 标签。"
-        )
-    if any(key in lower for key in ["任务", "harness", "进度", "执行"]):
-        if not tasks:
-            return "Harness 暂无任务。提交 thesis 或运行 pipeline 后，右侧 `系统行为` 会显示任务进度。"
-        return (
-            f"当前最近有 {len(tasks)} 个 harness 任务。右侧 `系统行为` 显示执行进度；"
-            "需要原始 payload 可以打开 `Human Approval` 或相关数据标签。"
-        )
-    if board and board.get("best_family"):
-        return (
-            f"我建议先看 `Research Workbench`：当前最佳通用 baseline 是 `{board['best_family']}`。"
-            "若你的问题涉及策略细节，去 `Run Detail`；涉及计算口径，去 `Metric Audit`；涉及系统健康，去 `System Status`。"
-        )
-    return "我建议从 `Research Workbench` 开始；它会把导航、策略摘要、系统行为和可追问入口放在同一页。"
+    catalog_summary = {
+        "lean_items": _table_count(engine, "strategy_catalog_items"),
+        "lean_reports": _table_count(engine, "strategy_catalog_reports"),
+        "factor_items": _table_count(engine, "factor_formula_items"),
+        "factor_reports": _table_count(engine, "factor_formula_catalog_reports"),
+    }
+    return build_dashboard_context(
+        theses=theses,
+        tasks=tasks,
+        regime=regime,
+        baseline_board=board,
+        latest_reviews=reviews,
+        catalog_summary=catalog_summary,
+    )
+
+
+def _table_count(engine, table_name: str) -> int:
+    inspector = inspect(engine)
+    if table_name not in inspector.get_table_names():
+        return 0
+    with engine.connect() as connection:
+        return int(connection.execute(text(f"select count(*) from {table_name}")).scalar() or 0)
 
 
 def render_research_run_detail(engine) -> None:
@@ -1399,6 +1437,57 @@ def render_dashboard_styles() -> None:
         }
         div[data-testid="stAlert"] {
             border-radius: 8px;
+        }
+        .qod-assistant-workspace {
+            margin-top: 22px;
+            padding: 14px 16px 18px 16px;
+            border-top: 1px solid #e4e7ee;
+            background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
+        }
+        .qod-assistant-dock {
+            position: sticky;
+            bottom: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 18px;
+            padding: 10px 14px;
+            border: 1px solid #dfe3ea;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 10px 28px rgba(24, 36, 54, 0.14);
+            color: #1f2937;
+        }
+        .qod-assistant-plus {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #d6dbe5;
+            font-weight: 700;
+        }
+        .qod-assistant-label {
+            font-weight: 700;
+        }
+        .qod-assistant-pill {
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #eef3ff;
+            color: #3054a6;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .qod-assistant-hint {
+            color: #687386;
+            font-size: 13px;
+        }
+        div[data-testid="stChatFloatingInputContainer"] {
+            border-top: 1px solid #e2e6ef;
+            background: rgba(255, 255, 255, 0.98);
+            padding-bottom: 0.85rem;
         }
         </style>
         """,

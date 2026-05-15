@@ -32,6 +32,8 @@ DEFAULT_TABLES = (
     "strategy_catalog_reports",
     "factor_formula_items",
     "factor_formula_catalog_reports",
+    "prompt_logs",
+    "model_response_logs",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",

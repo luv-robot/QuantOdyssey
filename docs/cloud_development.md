@@ -149,6 +149,7 @@ Do not put these in Codex Cloud logs, prompts, commits, or test fixtures:
 
 ```text
 OPENAI_API_KEY
+DEEPSEEK_API_KEY
 exchange API keys
 database passwords
 n8n secrets

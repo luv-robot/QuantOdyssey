@@ -6,8 +6,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-REQUIRED_KEYS = ["OPENAI_API_KEY"]
-OPTIONAL_KEYS = ["ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "POSTGRES_URL", "QDRANT_URL"]
+REQUIRED_KEYS = ["DEEPSEEK_API_KEY"]
+OPTIONAL_KEYS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_MODEL", "POSTGRES_URL", "QDRANT_URL"]
 BINARIES = ["freqtrade", "docker"]
 URLS = {
     "Prefect": os.getenv("PREFECT_API_URL", "http://127.0.0.1:4200/api"),
