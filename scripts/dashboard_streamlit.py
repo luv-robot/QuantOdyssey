@@ -52,6 +52,8 @@ KEY_TABLES = [
     "supervisor_reports",
     "public_thesis_cards",
     "public_strategy_cards",
+    "strategy_catalog_items",
+    "strategy_catalog_reports",
     "event_definition_sensitivity_reports",
     "event_definition_universe_reports",
     "failed_breakout_sensitivity_reports",
@@ -562,6 +564,50 @@ def _render_supervisor_flag(flag: dict) -> None:
     refs = flag.get("evidence_refs") or []
     if refs:
         st.caption("Evidence: " + ", ".join(f"`{ref}`" for ref in refs[:6]))
+
+
+def render_strategy_catalog(engine) -> None:
+    st.subheader("Strategy Catalog")
+    reports = recent_records(engine, "strategy_catalog_reports", limit=5)
+    items = recent_records(engine, "strategy_catalog_items", limit=200)
+    if not reports and not items:
+        st.info("No strategy catalog records found yet. Import Lean metadata first.")
+        st.code("python scripts/import_lean_strategy_catalog.py --save-to-db", language="bash")
+        return
+
+    if reports:
+        latest = reports[0]
+        columns = st.columns(4)
+        columns[0].metric("Catalog Items", latest.get("item_count", 0))
+        columns[1].metric("Scanned Files", latest.get("total_files_scanned", 0))
+        columns[2].metric(
+            "Baseline Candidates",
+            (latest.get("suggested_role_counts") or {}).get("baseline_candidate", 0),
+        )
+        columns[3].metric("Low Difficulty", (latest.get("difficulty_counts") or {}).get("low", 0))
+        for finding in latest.get("findings", []):
+            st.caption(finding)
+        with st.expander("Latest catalog report"):
+            st.json(latest)
+
+    if items:
+        rows = [
+            {
+                "name": item.get("name"),
+                "language": item.get("language"),
+                "family": item.get("strategy_family"),
+                "difficulty": item.get("migration_difficulty"),
+                "roles": ", ".join(item.get("suggested_roles") or []),
+                "assets": ", ".join(item.get("asset_classes") or []),
+                "data": ", ".join(item.get("data_requirements") or []),
+                "source_path": item.get("source_path"),
+            }
+            for item in items
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        with st.expander("Catalog item payloads"):
+            for item in items[:25]:
+                st.json(item)
 
 
 def render_global_ai_assistant(engine) -> None:
@@ -1368,6 +1414,7 @@ def main() -> None:
             "Resource Budgets",
             "Human Approval",
             "Agent Quality",
+            "Strategy Catalog",
             "Orderflow Health",
             "Metric Audit",
             "System Status",
@@ -1427,12 +1474,15 @@ def main() -> None:
         render_agent_quality_console(engine, database_url)
 
     with tabs[agent_quality_index + 1]:
-        render_orderflow_health(engine, database_url)
+        render_strategy_catalog(engine)
 
     with tabs[agent_quality_index + 2]:
-        render_metric_audit_registry()
+        render_orderflow_health(engine, database_url)
 
     with tabs[agent_quality_index + 3]:
+        render_metric_audit_registry()
+
+    with tabs[agent_quality_index + 4]:
         st.subheader("System Status")
         report = run_health_checks()
         status_label = report.status.upper()

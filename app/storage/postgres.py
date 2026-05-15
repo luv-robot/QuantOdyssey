@@ -61,6 +61,8 @@ from app.models import (
     StrategyFamilyMonteCarloReport,
     StrategyFamilyOrderflowAcceptanceReport,
     StrategyFamilyWalkForwardReport,
+    StrategyCatalogItem,
+    StrategyCatalogReport,
     StrategyManifest,
     StrategyLifecycleDecision,
     StrategyRegistryEntry,
@@ -426,6 +428,27 @@ class PublicStrategyCardRecord(Base):
     thesis_id = Column(String, index=True)
     visibility = Column(String, index=True, nullable=False)
     status = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class StrategyCatalogItemRecord(Base):
+    __tablename__ = "strategy_catalog_items"
+
+    item_id = Column(String, primary_key=True)
+    source = Column(String, index=True, nullable=False)
+    language = Column(String, index=True, nullable=False)
+    strategy_family = Column(String, index=True, nullable=False)
+    migration_difficulty = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class StrategyCatalogReportRecord(Base):
+    __tablename__ = "strategy_catalog_reports"
+
+    report_id = Column(String, primary_key=True)
+    source = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1781,6 +1804,72 @@ class QuantRepository:
                 query = query.filter(PublicStrategyCardRecord.status == status)
             records = query.order_by(PublicStrategyCardRecord.created_at.desc()).limit(limit).all()
             return [_load(PublicStrategyCard, record.payload) for record in records]
+
+    def save_strategy_catalog_item(self, item: StrategyCatalogItem) -> StrategyCatalogItem:
+        with self._session() as session:
+            session.merge(
+                StrategyCatalogItemRecord(
+                    item_id=item.item_id,
+                    source=item.source.value,
+                    language=item.language.value,
+                    strategy_family=item.strategy_family.value,
+                    migration_difficulty=item.migration_difficulty.value,
+                    payload=_dump(item),
+                )
+            )
+        return item
+
+    def get_strategy_catalog_item(self, item_id: str) -> Optional[StrategyCatalogItem]:
+        record = self._get(StrategyCatalogItemRecord, item_id)
+        return None if record is None else _load(StrategyCatalogItem, record.payload)
+
+    def query_strategy_catalog_items(
+        self,
+        source: Optional[str] = None,
+        language: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        migration_difficulty: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[StrategyCatalogItem]:
+        with self._session() as session:
+            query = session.query(StrategyCatalogItemRecord)
+            if source is not None:
+                query = query.filter(StrategyCatalogItemRecord.source == source)
+            if language is not None:
+                query = query.filter(StrategyCatalogItemRecord.language == language)
+            if strategy_family is not None:
+                query = query.filter(StrategyCatalogItemRecord.strategy_family == strategy_family)
+            if migration_difficulty is not None:
+                query = query.filter(StrategyCatalogItemRecord.migration_difficulty == migration_difficulty)
+            records = query.order_by(StrategyCatalogItemRecord.created_at.desc()).limit(limit).all()
+            return [_load(StrategyCatalogItem, record.payload) for record in records]
+
+    def save_strategy_catalog_report(self, report: StrategyCatalogReport) -> StrategyCatalogReport:
+        with self._session() as session:
+            session.merge(
+                StrategyCatalogReportRecord(
+                    report_id=report.report_id,
+                    source=report.source.value,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_strategy_catalog_report(self, report_id: str) -> Optional[StrategyCatalogReport]:
+        record = self._get(StrategyCatalogReportRecord, report_id)
+        return None if record is None else _load(StrategyCatalogReport, record.payload)
+
+    def query_strategy_catalog_reports(
+        self,
+        source: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[StrategyCatalogReport]:
+        with self._session() as session:
+            query = session.query(StrategyCatalogReportRecord)
+            if source is not None:
+                query = query.filter(StrategyCatalogReportRecord.source == source)
+            records = query.order_by(StrategyCatalogReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(StrategyCatalogReport, record.payload) for record in records]
 
     def save_event_definition_sensitivity_report(
         self,

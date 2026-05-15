@@ -138,6 +138,13 @@ from app.models.strategy_registry import (
     StrategySimilarityResult,
     StrategyVersion,
 )
+from app.models.strategy_catalog import (
+    StrategyCatalogItem,
+    StrategyCatalogLanguage,
+    StrategyCatalogReport,
+    StrategyCatalogSource,
+    StrategyMigrationDifficulty,
+)
 from app.models.trade import (
     EnhancedReviewMetrics,
     FailureDiagnosis,
@@ -266,6 +273,10 @@ __all__ = [
     "SupervisorStatus",
     "StrategyManifest",
     "StrategyCandidate",
+    "StrategyCatalogItem",
+    "StrategyCatalogLanguage",
+    "StrategyCatalogReport",
+    "StrategyCatalogSource",
     "StrategyFamily",
     "StrategyFamilyBaselineBoard",
     "StrategyFamilyBaselineRow",
@@ -283,6 +294,7 @@ __all__ = [
     "StrategySimilarityResult",
     "StrategyStatus",
     "StrategyVersion",
+    "StrategyMigrationDifficulty",
     "SymbolValidationResult",
     "ThesisStatus",
     "ThesisDataContract",
