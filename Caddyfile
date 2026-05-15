@@ -29,7 +29,7 @@ quantodyssey.com {
 	}
 
 	handle /app/favicon.png {
-		redir /assets/quantodyssey-mark.svg 308
+		redir * /assets/quantodyssey-mark.svg 308
 	}
 
 	handle /app* {
