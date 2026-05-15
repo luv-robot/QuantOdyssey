@@ -38,6 +38,7 @@ from app.models.harness import (
     StrategyScreeningAction,
     StrategyScreeningDecision,
 )
+from app.models.inbox import ThesisInboxItem, ThesisInboxSource, ThesisInboxStatus
 from app.models.market_data import (
     AggregateTrade,
     AlternativeDataMetric,
@@ -75,6 +76,12 @@ from app.models.portfolio_risk import (
     PortfolioRiskSeverity,
 )
 from app.models.regime import MarketRegimeSnapshot
+from app.models.publication import (
+    PublicArtifactStatus,
+    PublicArtifactVisibility,
+    PublicStrategyCard,
+    PublicThesisCard,
+)
 from app.models.review import (
     ResearchMaturityScore,
     ReviewCase,
@@ -194,6 +201,10 @@ __all__ = [
     "PortfolioRiskLimits",
     "PortfolioRiskReport",
     "PortfolioRiskSeverity",
+    "PublicArtifactStatus",
+    "PublicArtifactVisibility",
+    "PublicStrategyCard",
+    "PublicThesisCard",
     "PreReviewQuestion",
     "PreReviewQuestionCategory",
     "PreReviewStatus",
@@ -240,6 +251,9 @@ __all__ = [
     "StrategyVersion",
     "SymbolValidationResult",
     "ThesisStatus",
+    "ThesisInboxItem",
+    "ThesisInboxSource",
+    "ThesisInboxStatus",
     "ThesisPreReview",
     "TradeRecord",
     "TradeSummary",

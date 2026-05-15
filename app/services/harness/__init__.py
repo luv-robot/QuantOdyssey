@@ -7,6 +7,12 @@ from app.services.harness.event_definition import (
     scan_failed_breakout_trial_events,
     simulate_failed_breakout_trial_returns,
 )
+from app.services.harness.inbox import (
+    build_thesis_inbox_digest,
+    build_thesis_inbox_items,
+    convert_inbox_item_to_thesis,
+    mark_inbox_item_converted,
+)
 from app.services.harness.research_loop import build_research_harness_cycle
 from app.services.harness.screening import (
     build_baseline_implied_regime_report,
@@ -23,6 +29,10 @@ from app.services.harness.validation import (
 
 __all__ = [
     "build_research_harness_cycle",
+    "build_thesis_inbox_digest",
+    "build_thesis_inbox_items",
+    "convert_inbox_item_to_thesis",
+    "mark_inbox_item_converted",
     "build_event_definition_universe_report",
     "build_failed_breakout_universe_report",
     "build_data_sufficiency_gate",

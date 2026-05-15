@@ -17,6 +17,7 @@ PaperTradingReport
 It emits structured artifacts:
 
 ```text
+ThesisInboxItem
 ResearchTask
 ResearchFinding
 ResearchHarnessCycle
@@ -62,8 +63,14 @@ HumanResearchPipelineResult
 -> ReviewSession
 -> ResearchFinding
 -> ResearchTask
+-> ThesisInboxItem
 -> ResearchHarnessCycle
 ```
+
+`ThesisInboxItem` is the proactive communication layer. Harness may suggest ideas from baselines,
+regime shifts, failure findings, data gaps, watchlist candidates, and ReviewSession next experiments.
+These items remain `suggested` until the human accepts, edits, rejects, archives, or converts them
+into official theses/tasks.
 
 The first MVP does not execute expensive optimizer/hyperopt jobs automatically. It records bounded
 `parameter_sensitivity_test` tasks and marks larger search runs as approval-required. Optimizer is

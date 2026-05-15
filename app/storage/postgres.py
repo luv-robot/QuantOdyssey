@@ -42,6 +42,8 @@ from app.models import (
     PaperVsBacktestComparison,
     PortfolioRiskReport,
     PromptLog,
+    PublicStrategyCard,
+    PublicThesisCard,
     ResearchDesignDraft,
     ResearchFinding,
     ResearchHarnessCycle,
@@ -65,6 +67,7 @@ from app.models import (
     TradeRecord,
     TradeSummary,
     ThesisPreReview,
+    ThesisInboxItem,
     WorkflowRun,
 )
 
@@ -345,6 +348,20 @@ class ResearchTaskRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ThesisInboxRecord(Base):
+    __tablename__ = "thesis_inbox"
+
+    item_id = Column(String, primary_key=True)
+    fingerprint = Column(String, index=True, nullable=False)
+    source = Column(String, index=True, nullable=False)
+    status = Column(String, index=True, nullable=False)
+    strategy_family = Column(String, index=True, nullable=False)
+    linked_thesis_id = Column(String, index=True)
+    linked_strategy_id = Column(String, index=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class ResearchHarnessCycleRecord(Base):
     __tablename__ = "research_harness_cycles"
 
@@ -352,6 +369,29 @@ class ResearchHarnessCycleRecord(Base):
     signal_id = Column(String, index=True, nullable=False)
     thesis_id = Column(String, index=True)
     source = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PublicThesisCardRecord(Base):
+    __tablename__ = "public_thesis_cards"
+
+    public_id = Column(String, primary_key=True)
+    thesis_id = Column(String, index=True, nullable=False)
+    visibility = Column(String, index=True, nullable=False)
+    status = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PublicStrategyCardRecord(Base):
+    __tablename__ = "public_strategy_cards"
+
+    public_id = Column(String, primary_key=True)
+    strategy_id = Column(String, index=True, nullable=False)
+    thesis_id = Column(String, index=True)
+    visibility = Column(String, index=True, nullable=False)
+    status = Column(String, index=True, nullable=False)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1464,6 +1504,50 @@ class QuantRepository:
             records = query.order_by(ResearchTaskRecord.created_at.desc()).limit(limit).all()
             return [_load(ResearchTask, record.payload) for record in records]
 
+    def save_thesis_inbox_item(self, item: ThesisInboxItem) -> ThesisInboxItem:
+        with self._session() as session:
+            session.merge(
+                ThesisInboxRecord(
+                    item_id=item.item_id,
+                    fingerprint=item.fingerprint,
+                    source=item.source.value,
+                    status=item.status.value,
+                    strategy_family=item.strategy_family.value,
+                    linked_thesis_id=item.linked_thesis_id,
+                    linked_strategy_id=item.linked_strategy_id,
+                    payload=_dump(item),
+                )
+            )
+        return item
+
+    def get_thesis_inbox_item(self, item_id: str) -> Optional[ThesisInboxItem]:
+        record = self._get(ThesisInboxRecord, item_id)
+        return None if record is None else _load(ThesisInboxItem, record.payload)
+
+    def query_thesis_inbox_items(
+        self,
+        status: Optional[str] = None,
+        source: Optional[str] = None,
+        strategy_family: Optional[str] = None,
+        linked_thesis_id: Optional[str] = None,
+        linked_strategy_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[ThesisInboxItem]:
+        with self._session() as session:
+            query = session.query(ThesisInboxRecord)
+            if status is not None:
+                query = query.filter(ThesisInboxRecord.status == status)
+            if source is not None:
+                query = query.filter(ThesisInboxRecord.source == source)
+            if strategy_family is not None:
+                query = query.filter(ThesisInboxRecord.strategy_family == strategy_family)
+            if linked_thesis_id is not None:
+                query = query.filter(ThesisInboxRecord.linked_thesis_id == linked_thesis_id)
+            if linked_strategy_id is not None:
+                query = query.filter(ThesisInboxRecord.linked_strategy_id == linked_strategy_id)
+            records = query.order_by(ThesisInboxRecord.created_at.desc()).limit(limit).all()
+            return [_load(ThesisInboxItem, record.payload) for record in records]
+
     def save_research_harness_cycle(self, cycle: ResearchHarnessCycle) -> ResearchHarnessCycle:
         with self._session() as session:
             session.merge(
@@ -1495,6 +1579,80 @@ class QuantRepository:
                 query = query.filter(ResearchHarnessCycleRecord.signal_id == signal_id)
             records = query.order_by(ResearchHarnessCycleRecord.created_at.desc()).limit(limit).all()
             return [_load(ResearchHarnessCycle, record.payload) for record in records]
+
+    def save_public_thesis_card(self, card: PublicThesisCard) -> PublicThesisCard:
+        with self._session() as session:
+            session.merge(
+                PublicThesisCardRecord(
+                    public_id=card.public_id,
+                    thesis_id=card.thesis_id,
+                    visibility=card.visibility.value,
+                    status=card.status.value,
+                    payload=_dump(card),
+                )
+            )
+        return card
+
+    def get_public_thesis_card(self, public_id: str) -> Optional[PublicThesisCard]:
+        record = self._get(PublicThesisCardRecord, public_id)
+        return None if record is None else _load(PublicThesisCard, record.payload)
+
+    def query_public_thesis_cards(
+        self,
+        thesis_id: Optional[str] = None,
+        visibility: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[PublicThesisCard]:
+        with self._session() as session:
+            query = session.query(PublicThesisCardRecord)
+            if thesis_id is not None:
+                query = query.filter(PublicThesisCardRecord.thesis_id == thesis_id)
+            if visibility is not None:
+                query = query.filter(PublicThesisCardRecord.visibility == visibility)
+            if status is not None:
+                query = query.filter(PublicThesisCardRecord.status == status)
+            records = query.order_by(PublicThesisCardRecord.created_at.desc()).limit(limit).all()
+            return [_load(PublicThesisCard, record.payload) for record in records]
+
+    def save_public_strategy_card(self, card: PublicStrategyCard) -> PublicStrategyCard:
+        with self._session() as session:
+            session.merge(
+                PublicStrategyCardRecord(
+                    public_id=card.public_id,
+                    strategy_id=card.strategy_id,
+                    thesis_id=card.thesis_id,
+                    visibility=card.visibility.value,
+                    status=card.status.value,
+                    payload=_dump(card),
+                )
+            )
+        return card
+
+    def get_public_strategy_card(self, public_id: str) -> Optional[PublicStrategyCard]:
+        record = self._get(PublicStrategyCardRecord, public_id)
+        return None if record is None else _load(PublicStrategyCard, record.payload)
+
+    def query_public_strategy_cards(
+        self,
+        strategy_id: Optional[str] = None,
+        thesis_id: Optional[str] = None,
+        visibility: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[PublicStrategyCard]:
+        with self._session() as session:
+            query = session.query(PublicStrategyCardRecord)
+            if strategy_id is not None:
+                query = query.filter(PublicStrategyCardRecord.strategy_id == strategy_id)
+            if thesis_id is not None:
+                query = query.filter(PublicStrategyCardRecord.thesis_id == thesis_id)
+            if visibility is not None:
+                query = query.filter(PublicStrategyCardRecord.visibility == visibility)
+            if status is not None:
+                query = query.filter(PublicStrategyCardRecord.status == status)
+            records = query.order_by(PublicStrategyCardRecord.created_at.desc()).limit(limit).all()
+            return [_load(PublicStrategyCard, record.payload) for record in records]
 
     def save_event_definition_sensitivity_report(
         self,
