@@ -1191,6 +1191,18 @@ class QuantRepository:
         record = self._get(BacktestRecord, backtest_id)
         return None if record is None else _load(BacktestReport, record.payload)
 
+    def query_backtests(
+        self,
+        strategy_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[BacktestReport]:
+        with self._session() as session:
+            query = session.query(BacktestRecord)
+            if strategy_id is not None:
+                query = query.filter(BacktestRecord.strategy_id == strategy_id)
+            records = query.order_by(BacktestRecord.created_at.desc()).limit(limit).all()
+            return [_load(BacktestReport, record.payload) for record in records]
+
     def save_backtest_validation(
         self,
         validation: BacktestValidationReport,
@@ -2501,6 +2513,21 @@ class QuantRepository:
     def get_trade(self, trade_id: str) -> Optional[TradeRecord]:
         record = self._get(TradeRecordRow, trade_id)
         return None if record is None else _load(TradeRecord, record.payload)
+
+    def query_trades(
+        self,
+        strategy_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 1000,
+    ) -> list[TradeRecord]:
+        with self._session() as session:
+            query = session.query(TradeRecordRow)
+            if strategy_id is not None:
+                query = query.filter(TradeRecordRow.strategy_id == strategy_id)
+            if symbol is not None:
+                query = query.filter(TradeRecordRow.symbol == symbol)
+            records = query.order_by(TradeRecordRow.created_at.desc()).limit(limit).all()
+            return [_load(TradeRecord, record.payload) for record in records]
 
     def save_trade_summary(self, summary: TradeSummary) -> TradeSummary:
         with self._session() as session:

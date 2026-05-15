@@ -3,10 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from statistics import pstdev
 from uuid import uuid4
 
 from app.models import (
+    MonteCarloBacktestConfig,
     DataSufficiencyLevel,
+    FailedBreakoutUniverseReport,
+    OhlcvCandle,
     ResearchFinding,
     ResearchFindingSeverity,
     ResearchScratchpadRun,
@@ -15,7 +19,9 @@ from app.models import (
     ResearchTaskType,
     ScratchpadEventType,
     StrategyFamily,
+    TradeRecord,
 )
+from app.services.backtester import run_monte_carlo_backtest, run_trade_bootstrap_monte_carlo
 from app.services.harness.event_definition import (
     build_event_definition_universe_report,
     build_failed_breakout_universe_report,
@@ -25,8 +31,10 @@ from app.services.harness.event_definition import (
 from app.services.harness.scratchpad import append_scratchpad_event, create_scratchpad_run
 from app.services.harness.screening import (
     build_baseline_implied_regime_report,
+    build_regime_coverage_report,
     build_strategy_family_baseline_board,
 )
+from app.services.harness.validation import run_failed_breakout_bootstrap_monte_carlo
 from app.services.market_data import (
     find_freqtrade_funding_file,
     find_open_interest_file,
@@ -40,6 +48,8 @@ SUPPORTED_AUTOMATIC_TASK_TYPES = {
     ResearchTaskType.DATA_SUFFICIENCY_REVIEW,
     ResearchTaskType.BASELINE_TEST,
     ResearchTaskType.EVENT_FREQUENCY_SCAN,
+    ResearchTaskType.REGIME_BUCKET_TEST,
+    ResearchTaskType.MONTE_CARLO_TEST,
 }
 
 
@@ -53,6 +63,11 @@ class HarnessRunnerConfig:
     max_candles: int = 5000
     max_trials: int = 80
     min_trade_count: int = 20
+    monte_carlo_simulations: int = 200
+    monte_carlo_horizon_trades: int = 50
+    monte_carlo_seed: int | None = 7
+    monte_carlo_expensive_threshold: int = 250_000
+    approve_expensive_monte_carlo: bool = False
     scratchpad_base_dir: Path = Path(".qo") / "scratchpad"
 
 
@@ -244,6 +259,10 @@ def _execute_task(
         return _execute_baseline_test(task, config=config, scratchpad_run=scratchpad_run), []
     if task.task_type == ResearchTaskType.EVENT_FREQUENCY_SCAN:
         return _execute_event_frequency_scan(repository, task, config=config, scratchpad_run=scratchpad_run)
+    if task.task_type == ResearchTaskType.REGIME_BUCKET_TEST:
+        return _execute_regime_bucket_test(repository, task, config=config, scratchpad_run=scratchpad_run)
+    if task.task_type == ResearchTaskType.MONTE_CARLO_TEST:
+        return _execute_monte_carlo_test(repository, task, config=config, scratchpad_run=scratchpad_run)
     raise ValueError(f"Unsupported Harness task type: {task.task_type.value}")
 
 
@@ -495,13 +514,240 @@ def _run_funding_crowding_scan(
     return [finding], [f"event_definition_universe_report:{universe.report_id}"]
 
 
+def _execute_regime_bucket_test(
+    repository,
+    task: ResearchTask,
+    *,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    candles_by_cell, skipped = _load_candles_by_cell(config)
+    if not candles_by_cell:
+        return [
+            _finding(
+                task=task,
+                finding_type="regime_bucket_test",
+                severity=ResearchFindingSeverity.HIGH,
+                summary="Harness could not run regime bucket test because no OHLCV cells were available.",
+                observations=[],
+                evidence_gaps=skipped or ["no_ohlcv_cells_loaded"],
+            )
+        ], []
+
+    family = _task_strategy_family(task)
+    coverage = build_regime_coverage_report(candles_by_cell, strategy_family=family)
+    trades = repository.query_trades(strategy_id=task.strategy_id, limit=5000) if task.strategy_id else []
+    trade_observations, trade_gaps = _trade_regime_observations(trades, candles_by_cell)
+    append_scratchpad_event(
+        run_id=scratchpad_run.run_id,
+        event_type=ScratchpadEventType.NOTE,
+        payload={
+            "regime_coverage_report": coverage.model_dump(mode="json"),
+            "trade_regime_buckets": trade_observations,
+            "skipped_cells": skipped,
+        },
+        task_id=task.task_id,
+        thesis_id=task.thesis_id,
+        strategy_id=task.strategy_id,
+        evidence_refs=[f"regime_coverage_report:{coverage.report_id}"],
+        base_dir=config.scratchpad_base_dir,
+    )
+    severity = ResearchFindingSeverity.LOW
+    if not coverage.is_coverage_balanced or trade_gaps:
+        severity = ResearchFindingSeverity.MEDIUM
+    if not coverage.buckets:
+        severity = ResearchFindingSeverity.HIGH
+    observations = [
+        *coverage.findings,
+        *[
+            (
+                f"{bucket.regime}: candles={bucket.candle_count}, share={bucket.share:.1%}, "
+                f"avg_return={bucket.average_return:.6f}, vol={bucket.realized_volatility:.6f}, "
+                f"trend_return={bucket.trend_return:.4f}"
+            )
+            for bucket in coverage.buckets
+        ],
+        *trade_observations,
+    ]
+    evidence_refs = [f"scratchpad:{scratchpad_run.run_id}:regime_coverage_report:{coverage.report_id}"]
+    return [
+        _finding(
+            task=task,
+            finding_type="regime_bucket_test",
+            severity=severity,
+            summary="Harness ran regime bucket coverage and, when available, trade-level regime bucketing.",
+            observations=observations,
+            evidence_gaps=[*skipped, *trade_gaps],
+            evidence_refs=evidence_refs,
+        )
+    ], evidence_refs
+
+
+def _execute_monte_carlo_test(
+    repository,
+    task: ResearchTask,
+    *,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    family = _task_strategy_family(task)
+    universe_report = _failed_breakout_universe_for_task(repository, task) if family == StrategyFamily.FAILED_BREAKOUT_PUNISHMENT else None
+    if universe_report is not None:
+        return _execute_failed_breakout_monte_carlo(
+            repository,
+            task,
+            universe_report=universe_report,
+            config=config,
+            scratchpad_run=scratchpad_run,
+        )
+    return _execute_strategy_monte_carlo(repository, task, config=config, scratchpad_run=scratchpad_run)
+
+
+def _execute_failed_breakout_monte_carlo(
+    repository,
+    task: ResearchTask,
+    *,
+    universe_report: FailedBreakoutUniverseReport,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    candles_by_cell, skipped = _load_candles_by_cell(
+        config,
+        symbols=tuple(universe_report.symbols or config.symbols),
+        timeframes=tuple(universe_report.timeframes or config.timeframes),
+    )
+    report = run_failed_breakout_bootstrap_monte_carlo(
+        universe_report=universe_report,
+        candles_by_cell=candles_by_cell,
+        simulations=config.monte_carlo_simulations,
+        horizon_trades=config.monte_carlo_horizon_trades,
+        seed=config.monte_carlo_seed,
+        expensive_simulation_threshold=config.monte_carlo_expensive_threshold,
+        approved_to_run=config.approve_expensive_monte_carlo,
+        min_sampled_trades=max(10, config.min_trade_count),
+    )
+    repository.save_strategy_family_monte_carlo_report(report)
+    append_scratchpad_event(
+        run_id=scratchpad_run.run_id,
+        event_type=ScratchpadEventType.NOTE,
+        payload={"strategy_family_monte_carlo_report": report.model_dump(mode="json"), "skipped_cells": skipped},
+        task_id=task.task_id,
+        thesis_id=task.thesis_id,
+        strategy_id=task.strategy_id,
+        evidence_refs=[f"strategy_family_monte_carlo_report:{report.report_id}"],
+        base_dir=config.scratchpad_base_dir,
+    )
+    severity = ResearchFindingSeverity.LOW if report.passed else ResearchFindingSeverity.MEDIUM
+    if report.sampled_trade_count == 0 or (report.requires_human_confirmation and not report.approved_to_run):
+        severity = ResearchFindingSeverity.HIGH
+    evidence_refs = [
+        f"failed_breakout_universe_report:{universe_report.report_id}",
+        f"strategy_family_monte_carlo_report:{report.report_id}",
+    ]
+    return [
+        _finding(
+            task=task,
+            finding_type="strategy_family_monte_carlo_test",
+            severity=severity,
+            summary="Harness ran Failed Breakout strategy-family bootstrap Monte Carlo.",
+            observations=[*report.findings],
+            evidence_gaps=skipped,
+            evidence_refs=evidence_refs,
+        )
+    ], evidence_refs
+
+
+def _execute_strategy_monte_carlo(
+    repository,
+    task: ResearchTask,
+    *,
+    config: HarnessRunnerConfig,
+    scratchpad_run: ResearchScratchpadRun,
+) -> tuple[list[ResearchFinding], list[str]]:
+    backtest = _backtest_for_task(repository, task)
+    if backtest is None:
+        return [
+            _finding(
+                task=task,
+                finding_type="monte_carlo_test",
+                severity=ResearchFindingSeverity.HIGH,
+                summary="Harness could not run strategy Monte Carlo because no source backtest was found.",
+                observations=[],
+                evidence_gaps=["missing_source_backtest"],
+            )
+        ], []
+
+    mc_config = MonteCarloBacktestConfig(
+        simulations=config.monte_carlo_simulations,
+        horizon_trades=config.monte_carlo_horizon_trades,
+        seed=config.monte_carlo_seed,
+        expensive_simulation_threshold=config.monte_carlo_expensive_threshold,
+    )
+    trades = repository.query_trades(strategy_id=backtest.strategy_id, limit=5000)
+    report = (
+        run_trade_bootstrap_monte_carlo(
+            backtest,
+            trades,
+            config=mc_config,
+            approved_to_run=config.approve_expensive_monte_carlo,
+        )
+        if trades
+        else run_monte_carlo_backtest(
+            backtest,
+            config=mc_config,
+            approved_to_run=config.approve_expensive_monte_carlo,
+        )
+    )
+    repository.save_monte_carlo_backtest(report)
+    append_scratchpad_event(
+        run_id=scratchpad_run.run_id,
+        event_type=ScratchpadEventType.NOTE,
+        payload={"monte_carlo_backtest": report.model_dump(mode="json"), "trade_count": len(trades)},
+        task_id=task.task_id,
+        thesis_id=task.thesis_id,
+        strategy_id=backtest.strategy_id,
+        evidence_refs=[f"monte_carlo_backtest:{report.report_id}"],
+        base_dir=config.scratchpad_base_dir,
+    )
+    severity = _monte_carlo_finding_severity(
+        median_return=report.median_return,
+        p05_return=report.p05_return,
+        probability_of_loss=report.probability_of_loss,
+        requires_human_confirmation=report.requires_human_confirmation,
+        approved_to_run=report.approved_to_run,
+    )
+    evidence_refs = [f"backtest:{backtest.backtest_id}", f"monte_carlo_backtest:{report.report_id}"]
+    return [
+        _finding(
+            task=task,
+            finding_type="monte_carlo_test",
+            severity=severity,
+            summary="Harness ran strategy-level Monte Carlo path-risk test.",
+            observations=[
+                f"source_backtest={backtest.backtest_id}",
+                f"trades_for_bootstrap={len(trades)}",
+                f"median_return={report.median_return:.4f}",
+                f"p05_return={report.p05_return:.4f}",
+                f"probability_of_loss={report.probability_of_loss:.1%}",
+                f"max_drawdown_p05={report.max_drawdown_p05:.4f}",
+                *report.notes,
+            ],
+            evidence_gaps=[] if trades else ["trade_records_unavailable_used_derived_distribution"],
+            evidence_refs=evidence_refs,
+        )
+    ], evidence_refs
+
+
 def _load_candles_by_cell(
     config: HarnessRunnerConfig,
+    *,
+    symbols: tuple[str, ...] | None = None,
+    timeframes: tuple[str, ...] | None = None,
 ) -> tuple[dict[tuple[str, str], list], list[str]]:
     candles_by_cell = {}
     skipped = []
-    for symbol in config.symbols:
-        for timeframe in config.timeframes:
+    for symbol in symbols or config.symbols:
+        for timeframe in timeframes or config.timeframes:
             path = _ohlcv_path(config.data_dir, symbol, timeframe)
             if not path.exists():
                 skipped.append(f"{symbol}:{timeframe}:missing_ohlcv")
@@ -511,6 +757,204 @@ def _load_candles_by_cell(
                 candles = candles[-config.max_candles :]
             candles_by_cell[(symbol, timeframe)] = candles
     return candles_by_cell, skipped
+
+
+def _trade_regime_observations(
+    trades: list[TradeRecord],
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+) -> tuple[list[str], list[str]]:
+    if not trades:
+        return [], ["trade_records_unavailable_for_regime_bucket"]
+    bucket_returns: dict[str, list[float]] = {}
+    missing = 0
+    for trade in trades:
+        candle_set = _candles_for_trade(trade, candles_by_cell)
+        if candle_set is None:
+            missing += 1
+            continue
+        index = _candle_index_at_or_before(candle_set, trade.opened_at)
+        if index is None:
+            missing += 1
+            continue
+        regime = _classify_candle_regime(candle_set, index)
+        bucket_returns.setdefault(regime, []).append(trade.profit_pct)
+
+    observations = []
+    for regime, returns in sorted(bucket_returns.items()):
+        wins = [item for item in returns if item > 0]
+        losses = [item for item in returns if item < 0]
+        total_return = _compound_trade_returns(returns)
+        pf = _simple_profit_factor(returns)
+        win_rate = len(wins) / len(returns) if returns else 0
+        max_dd = _returns_max_drawdown(returns)
+        observations.append(
+            (
+                f"trade_bucket={regime}: trades={len(returns)}, return={total_return:.4f}, "
+                f"pf={pf:.2f}, win_rate={win_rate:.1%}, max_drawdown={max_dd:.4f}"
+            )
+        )
+    gaps = []
+    if missing:
+        gaps.append(f"{missing}_trade_records_could_not_be_matched_to_ohlcv")
+    if not observations:
+        gaps.append("no_trade_records_bucketed_by_regime")
+    return observations, gaps
+
+
+def _failed_breakout_universe_for_task(repository, task: ResearchTask) -> FailedBreakoutUniverseReport | None:
+    report_id = _evidence_ref_id(task.evidence_refs, "failed_breakout_universe_report")
+    if report_id is not None:
+        return repository.get_failed_breakout_universe_report(report_id)
+    if task.thesis_id is not None:
+        reports = repository.query_failed_breakout_universe_reports(
+            thesis_id=task.thesis_id,
+            strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+            limit=1,
+        )
+        if reports:
+            return reports[0]
+    reports = repository.query_failed_breakout_universe_reports(
+        strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+        limit=1,
+    )
+    return reports[0] if reports else None
+
+
+def _backtest_for_task(repository, task: ResearchTask):
+    backtest_id = _evidence_ref_id(task.evidence_refs, "backtest")
+    if backtest_id is not None:
+        backtest = repository.get_backtest(backtest_id)
+        if backtest is not None:
+            return backtest
+    if task.strategy_id is not None:
+        backtests = repository.query_backtests(strategy_id=task.strategy_id, limit=1)
+        if backtests:
+            return backtests[0]
+    if task.subject_type == "strategy":
+        backtests = repository.query_backtests(strategy_id=task.subject_id, limit=1)
+        if backtests:
+            return backtests[0]
+    return None
+
+
+def _evidence_ref_id(evidence_refs: list[str], prefix: str) -> str | None:
+    marker = f"{prefix}:"
+    for ref in evidence_refs:
+        if ref.startswith(marker):
+            return ref[len(marker) :]
+    return None
+
+
+def _monte_carlo_finding_severity(
+    *,
+    median_return: float,
+    p05_return: float,
+    probability_of_loss: float,
+    requires_human_confirmation: bool,
+    approved_to_run: bool,
+) -> ResearchFindingSeverity:
+    if requires_human_confirmation and not approved_to_run:
+        return ResearchFindingSeverity.HIGH
+    if median_return <= 0 or probability_of_loss >= 0.6 or p05_return < -0.2:
+        return ResearchFindingSeverity.HIGH
+    if probability_of_loss >= 0.45 or p05_return < -0.1:
+        return ResearchFindingSeverity.MEDIUM
+    return ResearchFindingSeverity.LOW
+
+
+def _candles_for_trade(
+    trade: TradeRecord,
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+) -> list[OhlcvCandle] | None:
+    normalized = _normalize_symbol(trade.symbol)
+    candidates = [
+        candles
+        for (symbol, _), candles in candles_by_cell.items()
+        if _normalize_symbol(symbol) == normalized
+    ]
+    if not candidates:
+        candidates = [
+            candles
+            for (symbol, _), candles in candles_by_cell.items()
+            if _normalize_symbol(symbol).startswith(normalized) or normalized.startswith(_normalize_symbol(symbol))
+        ]
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
+def _candle_index_at_or_before(candles: list[OhlcvCandle], timestamp: datetime) -> int | None:
+    target = _naive_datetime(timestamp)
+    result = None
+    for index, candle in enumerate(candles):
+        if _naive_datetime(candle.open_time) <= target:
+            result = index
+        else:
+            break
+    return result
+
+
+def _classify_candle_regime(candles: list[OhlcvCandle], index: int) -> str:
+    trend = abs(_window_return(candles, index, 48))
+    volatility = _window_volatility(candles, index, 48)
+    if volatility >= 0.012:
+        return "high_volatility"
+    if trend >= 0.03:
+        return "trend"
+    if volatility <= 0.003:
+        return "low_volatility"
+    return "range"
+
+
+def _window_return(candles: list[OhlcvCandle], index: int, lookback: int) -> float:
+    start = max(0, index - lookback)
+    if candles[start].close <= 0:
+        return 0
+    return candles[index].close / candles[start].close - 1
+
+
+def _window_volatility(candles: list[OhlcvCandle], index: int, lookback: int) -> float:
+    start = max(1, index - lookback + 1)
+    returns = [
+        candles[offset].close / candles[offset - 1].close - 1
+        for offset in range(start, index + 1)
+        if candles[offset - 1].close > 0
+    ]
+    return pstdev(returns) if len(returns) > 1 else 0
+
+
+def _compound_trade_returns(returns: list[float]) -> float:
+    equity = 1.0
+    for item in returns:
+        equity *= 1 + item
+    return equity - 1
+
+
+def _simple_profit_factor(returns: list[float]) -> float:
+    gross_profit = sum(item for item in returns if item > 0)
+    gross_loss = abs(sum(item for item in returns if item < 0))
+    if gross_loss == 0:
+        return 99.0 if gross_profit > 0 else 1.0
+    return gross_profit / gross_loss
+
+
+def _returns_max_drawdown(returns: list[float]) -> float:
+    equity = 1.0
+    peak = 1.0
+    drawdown = 0.0
+    for item in returns:
+        equity *= 1 + item
+        peak = max(peak, equity)
+        drawdown = min(drawdown, equity / peak - 1)
+    return drawdown
+
+
+def _normalize_symbol(symbol: str) -> str:
+    return symbol.upper().replace(":USDT", "").replace("/", "_").replace(":", "_")
+
+
+def _naive_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
 
 def _task_strategy_family(task: ResearchTask) -> StrategyFamily:

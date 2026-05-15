@@ -23,6 +23,11 @@ def main() -> int:
     parser.add_argument("--max-candles", type=int, default=5000)
     parser.add_argument("--max-trials", type=int, default=80)
     parser.add_argument("--min-trade-count", type=int, default=20)
+    parser.add_argument("--monte-carlo-simulations", type=int, default=200)
+    parser.add_argument("--monte-carlo-horizon-trades", type=int, default=50)
+    parser.add_argument("--monte-carlo-seed", type=int, default=7)
+    parser.add_argument("--monte-carlo-expensive-threshold", type=int, default=250_000)
+    parser.add_argument("--approve-expensive-monte-carlo", action="store_true")
     args = parser.parse_args()
 
     config = HarnessRunnerConfig(
@@ -35,6 +40,11 @@ def main() -> int:
         max_candles=args.max_candles,
         max_trials=args.max_trials,
         min_trade_count=args.min_trade_count,
+        monte_carlo_simulations=args.monte_carlo_simulations,
+        monte_carlo_horizon_trades=args.monte_carlo_horizon_trades,
+        monte_carlo_seed=args.monte_carlo_seed,
+        monte_carlo_expensive_threshold=args.monte_carlo_expensive_threshold,
+        approve_expensive_monte_carlo=args.approve_expensive_monte_carlo,
     )
     repository = QuantRepository(args.database_url)
     summary = run_research_harness_queue(repository, config=config)
