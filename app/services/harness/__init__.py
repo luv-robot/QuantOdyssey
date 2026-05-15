@@ -9,6 +9,7 @@ from app.services.harness.event_definition import (
 )
 from app.services.harness.research_loop import build_research_harness_cycle
 from app.services.harness.screening import (
+    build_baseline_implied_regime_report,
     build_data_sufficiency_gate,
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
@@ -25,6 +26,7 @@ __all__ = [
     "build_event_definition_universe_report",
     "build_failed_breakout_universe_report",
     "build_data_sufficiency_gate",
+    "build_baseline_implied_regime_report",
     "build_regime_coverage_report",
     "build_strategy_family_baseline_board",
     "decide_strategy_screening_action",

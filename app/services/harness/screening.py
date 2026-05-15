@@ -4,6 +4,7 @@ from statistics import mean, pstdev
 from uuid import uuid4
 
 from app.models import (
+    BaselineImpliedRegimeReport,
     DataSufficiencyGateReport,
     DataSufficiencyLevel,
     FailedBreakoutUniverseReport,
@@ -96,22 +97,26 @@ def build_strategy_family_baseline_board(
     failed_breakout_report: FailedBreakoutUniverseReport | None = None,
 ) -> StrategyFamilyBaselineBoard:
     rows = [
+        _cash_row(),
         _passive_btc_row(candles_by_cell, mode="buy_and_hold"),
         _passive_btc_row(candles_by_cell, mode="dca"),
-        _momentum_row(candles_by_cell),
+        _equal_weight_hold_row(candles_by_cell),
+        _cross_sectional_momentum_row(candles_by_cell),
+        _time_series_trend_row(candles_by_cell),
+        _breakout_trend_row(candles_by_cell),
         _mean_reversion_row(candles_by_cell),
+        _grid_range_row(candles_by_cell),
     ]
-    if failed_breakout_report is not None:
-        rows.append(_failed_breakout_row(failed_breakout_report))
 
     best = max(rows, key=lambda item: (item.total_return, item.profit_factor), default=None)
     findings = [
+        "Baseline board covers passive exposure, momentum, trend following, and range/grid proxies.",
         "Passive BTC exposure baselines include both buy-and-hold BTC and DCA BTC.",
     ]
     if best is not None:
         findings.append(f"Best baseline family is {best.strategy_family} with return {best.total_return:.4f}.")
     if failed_breakout_report is not None:
-        findings.append("Failed Breakout is compared against passive exposure and simple OHLCV strategy families.")
+        findings.append("Failed Breakout is candidate evidence and is intentionally excluded from generic baselines.")
 
     return StrategyFamilyBaselineBoard(
         board_id=f"strategy_family_baseline_board_{uuid4().hex[:8]}",
@@ -119,6 +124,61 @@ def build_strategy_family_baseline_board(
         timeframes=sorted({timeframe for _, timeframe in candles_by_cell}),
         rows=rows,
         best_family=None if best is None else best.strategy_family,
+        findings=findings,
+    )
+
+
+def build_baseline_implied_regime_report(board: StrategyFamilyBaselineBoard) -> BaselineImpliedRegimeReport:
+    """Infer a provisional regime from generic baseline performance.
+
+    This is intentionally a reverse-inference diagnostic: it says which simple
+    strategy class the current data window rewarded. It is not a standalone
+    regime classifier and should later be checked against independent regime features.
+    """
+    rows_by_name = {row.strategy_family: row for row in board.rows}
+    row_scores = {row.strategy_family: _baseline_strength(row) for row in board.rows}
+    component_scores = {
+        "passive_beta": _max_score(
+            row_scores,
+            "passive_btc_buy_and_hold",
+            "passive_btc_dca",
+            "passive_equal_weight_buy_and_hold",
+        ),
+        "directional_momentum": _max_score(row_scores, "cross_sectional_momentum"),
+        "trend_following": _max_score(row_scores, "time_series_trend", "breakout_trend"),
+        "range_harvesting": _max_score(row_scores, "range_mean_reversion", "grid_range"),
+        "defensive_cash": _defensive_score(board.rows),
+    }
+    ranked_components = sorted(component_scores.items(), key=lambda item: (-item[1], item[0]))
+    top_name, top_score = ranked_components[0] if ranked_components else ("mixed_or_transition", 0.0)
+    second_score = ranked_components[1][1] if len(ranked_components) > 1 else 0.0
+    gap = top_score - second_score
+    regime_label = _regime_label_from_components(component_scores, gap)
+    confidence = round(min(0.9, max(0.35, 0.4 + gap / 100)), 3)
+    leaders = [
+        name
+        for name, _ in sorted(row_scores.items(), key=lambda item: (-item[1], item[0]))[:3]
+        if name in rows_by_name
+    ]
+    laggards = [
+        name
+        for name, _ in sorted(row_scores.items(), key=lambda item: (item[1], item[0]))[:3]
+        if name in rows_by_name
+    ]
+    findings = [
+        f"Baseline-implied regime is {regime_label} with {confidence:.1%} confidence.",
+        f"Top component is {top_name} at score {top_score:.2f}; runner-up score is {second_score:.2f}.",
+        f"Leading baseline(s): {', '.join(leaders) if leaders else 'none'}.",
+        "This is a provisional reverse inference from baseline outcomes, not an independent regime model.",
+    ]
+    return BaselineImpliedRegimeReport(
+        report_id=f"baseline_implied_regime_{uuid4().hex[:8]}",
+        source_baseline_board_id=board.board_id,
+        regime_label=regime_label,
+        confidence=confidence,
+        component_scores={key: round(value, 3) for key, value in component_scores.items()},
+        leading_baselines=leaders,
+        lagging_baselines=laggards,
         findings=findings,
     )
 
@@ -248,6 +308,20 @@ def _window_volatility(candles: list[OhlcvCandle], index: int, lookback: int) ->
     return pstdev(returns) if len(returns) > 1 else 0
 
 
+def _cash_row() -> StrategyFamilyBaselineRow:
+    return StrategyFamilyBaselineRow(
+        strategy_family="cash_no_trade",
+        description="No-position cash baseline.",
+        total_return=0,
+        profit_factor=1,
+        sharpe=None,
+        max_drawdown=0,
+        trades=0,
+        positive_cell_count=0,
+        tested_cell_count=0,
+    )
+
+
 def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], *, mode: str) -> StrategyFamilyBaselineRow:
     btc_cells = [(cell, candles) for cell, candles in candles_by_cell.items() if cell[0].upper().startswith("BTC/")]
     returns: list[float] = []
@@ -279,6 +353,19 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
     )
 
 
+def _equal_weight_hold_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
+    returns: list[float] = []
+    for candles in candles_by_cell.values():
+        sorted_candles = sorted(candles, key=lambda item: item.open_time)
+        if len(sorted_candles) >= 2 and sorted_candles[0].close > 0:
+            returns.append(sorted_candles[-1].close / sorted_candles[0].close - 1)
+    return _row_from_returns(
+        "passive_equal_weight_buy_and_hold",
+        "Equal-weight passive buy-and-hold across available symbols/timeframes.",
+        returns,
+    )
+
+
 def _dca_return(candles: list[OhlcvCandle], steps: int = 12) -> float:
     if len(candles) < 2:
         return 0
@@ -293,14 +380,79 @@ def _dca_return(candles: list[OhlcvCandle], steps: int = 12) -> float:
     return units * candles[-1].close / invested - 1
 
 
-def _momentum_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
-    returns = [_fixed_horizon_signal_return(candles, side="long", mode="momentum") for candles in candles_by_cell.values()]
-    return _row_from_returns("continuous_trend_or_momentum", "Simple OHLCV momentum baseline.", returns)
+def _cross_sectional_momentum_row(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    lookback: int = 48,
+    horizon: int = 12,
+) -> StrategyFamilyBaselineRow:
+    returns: list[float] = []
+    for _, group in _cells_by_timeframe(candles_by_cell).items():
+        sorted_group = [(symbol, sorted(candles, key=lambda item: item.open_time)) for symbol, candles in group]
+        if not sorted_group:
+            continue
+        max_len = min(len(candles) for _, candles in sorted_group)
+        index = lookback
+        while index + horizon < max_len:
+            ranked = []
+            for symbol, candles in sorted_group:
+                if candles[index - lookback].close <= 0 or candles[index].close <= 0:
+                    continue
+                ranked.append((candles[index].close / candles[index - lookback].close - 1, symbol, candles))
+            if ranked:
+                _, _, chosen = max(ranked, key=lambda item: item[0])
+                entry = chosen[index].close
+                exit_ = chosen[index + horizon].close
+                if entry > 0:
+                    returns.append(exit_ / entry - 1)
+                index += horizon
+            else:
+                index += 1
+    return _row_from_returns(
+        "cross_sectional_momentum",
+        "Cross-sectional momentum baseline: hold the strongest recent asset for a fixed horizon.",
+        returns,
+    )
+
+
+def _time_series_trend_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
+    returns = [
+        _fixed_horizon_signal_return(candles, side="long", mode="momentum", lookback=96, horizon=24)
+        for candles in candles_by_cell.values()
+    ]
+    return _row_from_returns(
+        "time_series_trend",
+        "Time-series trend baseline using positive trailing return as a long signal.",
+        returns,
+    )
+
+
+def _breakout_trend_row(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    lookback: int = 96,
+    horizon: int = 24,
+) -> StrategyFamilyBaselineRow:
+    returns = [_donchian_breakout_return(candles, lookback=lookback, horizon=horizon) for candles in candles_by_cell.values()]
+    return _row_from_returns(
+        "breakout_trend",
+        "Donchian-style breakout trend baseline.",
+        returns,
+    )
 
 
 def _mean_reversion_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
     returns = [_fixed_horizon_signal_return(candles, side="long", mode="mean_reversion") for candles in candles_by_cell.values()]
     return _row_from_returns("range_mean_reversion", "Simple OHLCV range mean-reversion baseline.", returns)
+
+
+def _grid_range_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
+    returns = [_grid_proxy_return(candles) for candles in candles_by_cell.values()]
+    return _row_from_returns(
+        "grid_range",
+        "Range-harvesting grid proxy using rolling midline deviations with bounded inventory.",
+        returns,
+    )
 
 
 def _fixed_horizon_signal_return(candles: list[OhlcvCandle], *, side: str, mode: str, lookback: int = 48, horizon: int = 12) -> float:
@@ -324,6 +476,54 @@ def _fixed_horizon_signal_return(candles: list[OhlcvCandle], *, side: str, mode:
     return sum(returns)
 
 
+def _donchian_breakout_return(candles: list[OhlcvCandle], *, lookback: int, horizon: int) -> float:
+    sorted_candles = sorted(candles, key=lambda item: item.open_time)
+    returns: list[float] = []
+    index = lookback
+    while index + horizon < len(sorted_candles):
+        previous_high = max(item.high for item in sorted_candles[index - lookback : index])
+        if sorted_candles[index].close > previous_high and sorted_candles[index].close > 0:
+            returns.append(sorted_candles[index + horizon].close / sorted_candles[index].close - 1)
+            index += horizon
+        else:
+            index += 1
+    return sum(returns)
+
+
+def _grid_proxy_return(candles: list[OhlcvCandle], *, lookback: int = 48, horizon: int = 6) -> float:
+    sorted_candles = sorted(candles, key=lambda item: item.open_time)
+    returns: list[float] = []
+    index = lookback
+    while index + horizon < len(sorted_candles):
+        window = sorted_candles[index - lookback : index]
+        midpoint = mean([item.close for item in window])
+        volatility = pstdev([item.close / window[offset - 1].close - 1 for offset, item in enumerate(window[1:], start=1)])
+        threshold = max(0.005, volatility * 2)
+        close = sorted_candles[index].close
+        if midpoint <= 0 or close <= 0:
+            index += 1
+            continue
+        distance = close / midpoint - 1
+        if distance <= -threshold:
+            returns.append(sorted_candles[index + horizon].close / close - 1)
+            index += horizon
+        elif distance >= threshold:
+            returns.append(close / sorted_candles[index + horizon].close - 1)
+            index += horizon
+        else:
+            index += 1
+    return sum(returns)
+
+
+def _cells_by_timeframe(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+) -> dict[str, list[tuple[str, list[OhlcvCandle]]]]:
+    groups: dict[str, list[tuple[str, list[OhlcvCandle]]]] = {}
+    for (symbol, timeframe), candles in candles_by_cell.items():
+        groups.setdefault(timeframe, []).append((symbol, candles))
+    return groups
+
+
 def _row_from_returns(strategy_family: str, description: str, returns: list[float]) -> StrategyFamilyBaselineRow:
     usable = [item for item in returns if item != 0]
     total_return = mean(returns) if returns else 0
@@ -341,6 +541,48 @@ def _row_from_returns(strategy_family: str, description: str, returns: list[floa
         positive_cell_count=sum(1 for item in returns if item > 0),
         tested_cell_count=len(returns),
     )
+
+
+def _baseline_strength(row: StrategyFamilyBaselineRow) -> float:
+    return_component = row.total_return * 240
+    pf_component = (min(row.profit_factor, 3.0) - 1.0) * 12 if row.profit_factor > 0 else -12
+    sharpe_component = 0 if row.sharpe is None else max(-10, min(20, row.sharpe * 8))
+    drawdown_component = -abs(row.max_drawdown) * 120
+    breadth = row.positive_cell_count / row.tested_cell_count if row.tested_cell_count else 0
+    sample_component = min(10, row.trades / 80 * 10)
+    return _clamp(50 + return_component + pf_component + sharpe_component + drawdown_component + breadth * 10 + sample_component)
+
+
+def _max_score(scores: dict[str, float], *names: str) -> float:
+    return max((scores.get(name, 0.0) for name in names), default=0.0)
+
+
+def _defensive_score(rows: list[StrategyFamilyBaselineRow]) -> float:
+    active_returns = [row.total_return for row in rows if row.strategy_family != "cash_no_trade"]
+    best_active = max(active_returns, default=0.0)
+    worst_drawdown = min((row.max_drawdown for row in rows if row.strategy_family != "cash_no_trade"), default=0.0)
+    if best_active <= 0:
+        return _clamp(75 + abs(worst_drawdown) * 50)
+    return _clamp(55 - best_active * 180 + abs(worst_drawdown) * 25)
+
+
+def _regime_label_from_components(component_scores: dict[str, float], gap: float) -> str:
+    top_name, top_score = max(component_scores.items(), key=lambda item: item[1])
+    if gap < 6:
+        return "mixed_or_transition"
+    if top_name == "defensive_cash" and top_score >= 55:
+        return "risk_off_or_low_edge"
+    if top_name == "passive_beta":
+        return "beta_trend"
+    if top_name in {"directional_momentum", "trend_following"}:
+        return "directional_trend"
+    if top_name == "range_harvesting":
+        return "range_or_mean_reverting"
+    return "mixed_or_transition"
+
+
+def _clamp(value: float, lower: float = 0.0, upper: float = 100.0) -> float:
+    return max(lower, min(upper, round(value, 6)))
 
 
 def _failed_breakout_row(report: FailedBreakoutUniverseReport) -> StrategyFamilyBaselineRow:

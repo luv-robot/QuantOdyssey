@@ -9,6 +9,7 @@ from app.models import (
     StrategyScreeningAction,
 )
 from app.services.harness import (
+    build_baseline_implied_regime_report,
     build_data_sufficiency_gate,
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
@@ -25,9 +26,52 @@ def test_baseline_board_includes_btc_dca_with_buy_and_hold_group() -> None:
     board = build_strategy_family_baseline_board(candles_by_cell)
 
     names = [row.strategy_family for row in board.rows]
+    assert "cash_no_trade" in names
     assert "passive_btc_buy_and_hold" in names
     assert "passive_btc_dca" in names
+    assert "passive_equal_weight_buy_and_hold" in names
+    assert "cross_sectional_momentum" in names
+    assert "time_series_trend" in names
+    assert "breakout_trend" in names
+    assert "grid_range" in names
     assert any("DCA BTC" in finding or "DCA" in finding for finding in board.findings)
+
+
+def test_baseline_board_excludes_failed_breakout_from_generic_baselines() -> None:
+    board = build_strategy_family_baseline_board(
+        {("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT")},
+        failed_breakout_report=FailedBreakoutUniverseReport(
+            report_id="failed_breakout_universe_not_baseline",
+            strategy_family=StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value,
+            completed_cells=0,
+            min_market_confirmations=1,
+        ),
+    )
+
+    assert StrategyFamily.FAILED_BREAKOUT_PUNISHMENT.value not in [row.strategy_family for row in board.rows]
+    assert any("intentionally excluded" in finding for finding in board.findings)
+
+
+def test_baseline_implied_regime_uses_baseline_performance_as_provisional_signal() -> None:
+    candles_by_cell = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=260),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=260),
+    }
+    board = build_strategy_family_baseline_board(candles_by_cell)
+
+    report = build_baseline_implied_regime_report(board)
+
+    assert report.source_baseline_board_id == board.board_id
+    assert report.regime_label in {
+        "beta_trend",
+        "directional_trend",
+        "mixed_or_transition",
+        "range_or_mean_reverting",
+        "risk_off_or_low_edge",
+    }
+    assert 0 <= report.confidence <= 1
+    assert "passive_beta" in report.component_scores
+    assert report.leading_baselines
 
 
 def test_screening_decision_deepens_validation_for_promising_sampled_universe() -> None:

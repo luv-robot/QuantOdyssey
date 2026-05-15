@@ -155,6 +155,20 @@ class StrategyFamilyBaselineBoard(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class BaselineImpliedRegimeReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    source_baseline_board_id: str = Field(min_length=1)
+    regime_label: str = Field(min_length=1)
+    confidence: float = Field(ge=0, le=1)
+    component_scores: dict[str, float] = Field(default_factory=dict)
+    leading_baselines: list[str] = Field(default_factory=list)
+    lagging_baselines: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class DataSufficiencyGateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

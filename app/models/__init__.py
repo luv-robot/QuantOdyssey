@@ -10,6 +10,7 @@ from app.models.baseline import BaselineComparisonReport, BaselineResult
 from app.models.experiment import ExperimentManifest
 from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStatus
 from app.models.harness import (
+    BaselineImpliedRegimeReport,
     DataSufficiencyGateReport,
     EventDefinitionSensitivityReport,
     EventDefinitionSensitivityTrial,
@@ -223,6 +224,7 @@ __all__ = [
     "StrategyFamily",
     "StrategyFamilyBaselineBoard",
     "StrategyFamilyBaselineRow",
+    "BaselineImpliedRegimeReport",
     "StrategyFamilyMonteCarloReport",
     "StrategyFamilyOrderflowAcceptanceEvent",
     "StrategyFamilyOrderflowAcceptanceReport",
