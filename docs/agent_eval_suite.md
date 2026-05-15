@@ -33,6 +33,35 @@ Needs Human Review: yes / no
 The global Supervisor Agent may read eval results and internal traces, but it cannot promote
 strategies, change risk budgets, publish private artifacts, or bypass Harness budgets.
 
+## Supervisor Workflow
+
+Supervisor is the admin-facing quality layer over Agent Eval, ReviewSession, ResearchTask, and
+ResearchFinding.
+
+```text
+Agent Eval Suite
+-> AgentEvalRun
+-> SupervisorReport
+-> SupervisorFlag
+-> Admin decision / follow-up ResearchTask
+```
+
+It flags:
+
+- failed AgentEvalCaseResult
+- ReviewSession blind spots and maturity blockers
+- blocked or approval-required ResearchTask
+- high-severity findings and evidence gaps
+
+Supervisor Chat is a query interface over those artifacts. It should answer questions such as:
+
+- Did AI Review regress recently?
+- Which tasks are stuck behind budget approval?
+- Which ReviewSessions need human audit?
+- Are we repeating failed loops?
+
+It is not a strategy approval engine.
+
 ## MVP Command
 
 ```bash
@@ -44,3 +73,11 @@ Pass a JSON mapping of `case_id -> response` to score real outputs:
 ```bash
 python scripts/run_agent_eval_suite.py --responses agent_responses.json --json
 ```
+
+Run the persisted supervisor workflow:
+
+```bash
+python scripts/run_supervisor_quality_check.py
+```
+
+The Dashboard exposes the same workflow in the admin-only `Agent Quality` tab.

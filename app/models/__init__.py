@@ -103,6 +103,13 @@ from app.models.research_asset import ResearchAssetIndexEntry
 from app.models.resource_control import ResourceBudgetReport
 from app.models.robustness import RobustnessReport
 from app.models.scratchpad import ResearchScratchpadEvent, ResearchScratchpadRun, ScratchpadEventType
+from app.models.supervisor import (
+    SupervisorFlag,
+    SupervisorFlagKind,
+    SupervisorFlagSeverity,
+    SupervisorReport,
+    SupervisorStatus,
+)
 from app.models.research import (
     CandidateRankingResult,
     DataSufficiencyLevel,
@@ -250,6 +257,11 @@ __all__ = [
     "RegimeCoverageReport",
     "SignalType",
     "ScratchpadEventType",
+    "SupervisorFlag",
+    "SupervisorFlagKind",
+    "SupervisorFlagSeverity",
+    "SupervisorReport",
+    "SupervisorStatus",
     "StrategyManifest",
     "StrategyCandidate",
     "StrategyFamily",

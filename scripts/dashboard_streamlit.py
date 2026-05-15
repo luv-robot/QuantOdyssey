@@ -20,10 +20,12 @@ from app.models import (  # noqa: E402
     ThesisStatus,
 )
 from app.services.operations import run_health_checks  # noqa: E402
+from app.services.agent_eval import build_builtin_agent_eval_cases, run_agent_eval_suite  # noqa: E402
 from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
 from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
 from app.services.metrics import performance_metric_registry  # noqa: E402
 from app.services.researcher import build_research_design_draft, build_thesis_pre_review  # noqa: E402
+from app.services.supervisor import build_supervisor_report, supervisor_chat_answer  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
 
@@ -39,6 +41,8 @@ KEY_TABLES = [
     "research_tasks",
     "thesis_inbox",
     "research_harness_cycles",
+    "agent_eval_runs",
+    "supervisor_reports",
     "public_thesis_cards",
     "public_strategy_cards",
     "event_definition_sensitivity_reports",
@@ -383,6 +387,127 @@ def render_metric_audit_registry() -> None:
             st.write("**External References**")
             for reference in item.external_references:
                 st.markdown(f"- [{reference['name']}]({reference['url']}): {reference['note']}")
+
+
+def render_agent_quality_console(engine, database_url: str) -> None:
+    st.subheader("Agent Quality Console")
+    st.caption("Admin-only quality control for Harness, Reviewer, Researcher, and Supervisor behavior.")
+    repository = QuantRepository(database_url)
+
+    latest_eval_run = _latest_agent_eval_run(repository)
+    latest_report = _latest_supervisor_report(repository)
+
+    left, right = st.columns([0.7, 0.3])
+    with left:
+        st.write("**Supervisor Status**")
+        if latest_report is None:
+            st.info("No SupervisorReport exists yet. Run a smoke check to create the first report.")
+        else:
+            _render_supervisor_status(latest_report.model_dump(mode="json"))
+    with right:
+        if st.button("Run Agent Eval Smoke", type="primary"):
+            cases = build_builtin_agent_eval_cases()
+            responses = {
+                case.case_id: " ".join([*case.expected_terms, "evidence discipline followed"])
+                for case in cases
+            }
+            eval_run = run_agent_eval_suite(responses, cases=cases)
+            report = build_supervisor_report(
+                agent_eval_run=eval_run,
+                review_sessions=repository.query_review_sessions(limit=25),
+                research_tasks=repository.query_research_tasks(limit=50),
+                research_findings=repository.query_research_findings(limit=50),
+            )
+            repository.save_agent_eval_run(eval_run)
+            repository.save_supervisor_report(report)
+            st.success("Agent Eval smoke completed and SupervisorReport saved.")
+            latest_eval_run = eval_run
+            latest_report = report
+
+    if latest_eval_run is not None:
+        st.write("### Agent Eval")
+        eval_payload = latest_eval_run.model_dump(mode="json")
+        scores = eval_payload.get("aggregate_scores") or {}
+        score_cols = st.columns(max(1, min(4, len(scores))))
+        for col, (name, score) in zip(score_cols, scores.items()):
+            col.metric(name.replace("_", " ").title(), f"{score:.1f}")
+        for result in eval_payload.get("results", []):
+            label = f"{result.get('case_id')} · {result.get('target_agent')} · score {result.get('score')}"
+            if result.get("passed"):
+                st.success(label)
+            else:
+                st.error(label)
+            with st.expander(f"Eval details: {result.get('case_id')}", expanded=False):
+                st.json(result)
+
+    if latest_report is not None:
+        report_payload = latest_report.model_dump(mode="json")
+        st.write("### Supervisor Flags")
+        flags = report_payload.get("flags") or []
+        if not flags:
+            st.success("No quality-control flags.")
+        for flag in flags[:20]:
+            _render_supervisor_flag(flag)
+
+        st.write("### Supervisor Chat")
+        with st.form("supervisor_chat_form"):
+            question = st.text_input(
+                "Ask Supervisor",
+                placeholder="例如：最近 AI Review 有没有误判？哪些任务有预算风险？",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button("Ask")
+        if submitted and question.strip():
+            answer = supervisor_chat_answer(
+                question.strip(),
+                report=latest_report,
+                agent_eval_run=latest_eval_run,
+                research_tasks=repository.query_research_tasks(limit=50),
+                review_sessions=repository.query_review_sessions(limit=25),
+            )
+            st.info(answer)
+
+
+def _latest_agent_eval_run(repository: QuantRepository):
+    runs = repository.query_agent_eval_runs(limit=1)
+    return runs[0] if runs else None
+
+
+def _latest_supervisor_report(repository: QuantRepository):
+    reports = repository.query_supervisor_reports(limit=1)
+    return reports[0] if reports else None
+
+
+def _render_supervisor_status(report: dict) -> None:
+    status = report.get("status", "unknown")
+    if status == "ok":
+        st.success(report.get("summary", "Supervisor status is ok."))
+    elif status == "critical":
+        st.error(report.get("summary", "Supervisor status is critical."))
+    else:
+        st.warning(report.get("summary", "Supervisor status has warnings."))
+    st.caption(f"report_id: `{report.get('report_id')}`")
+    actions = report.get("recommended_next_actions") or []
+    if actions:
+        st.write("**Recommended next actions**")
+        for action in actions:
+            st.write(f"- {action}")
+
+
+def _render_supervisor_flag(flag: dict) -> None:
+    severity = flag.get("severity")
+    label = f"{flag.get('kind')} · {flag.get('title')}"
+    if severity == "critical":
+        st.error(label)
+    elif severity == "warn":
+        st.warning(label)
+    else:
+        st.info(label)
+    st.caption(flag.get("summary", ""))
+    st.caption(f"Recommended: {flag.get('recommended_action', '')}")
+    refs = flag.get("evidence_refs") or []
+    if refs:
+        st.caption("Evidence: " + ", ".join(f"`{ref}`" for ref in refs[:6]))
 
 
 def render_global_ai_assistant(engine) -> None:
@@ -1188,6 +1313,7 @@ def main() -> None:
             "Risk Alerts",
             "Resource Budgets",
             "Human Approval",
+            "Agent Quality",
             "Orderflow Health",
             "Metric Audit",
             "System Status",
@@ -1242,13 +1368,17 @@ def main() -> None:
             for payload in payloads:
                 st.json(payload)
 
-    with tabs[-3]:
+    agent_quality_index = 3 + len(table_by_tab)
+    with tabs[agent_quality_index]:
+        render_agent_quality_console(engine, database_url)
+
+    with tabs[agent_quality_index + 1]:
         render_orderflow_health(engine, database_url)
 
-    with tabs[-2]:
+    with tabs[agent_quality_index + 2]:
         render_metric_audit_registry()
 
-    with tabs[-1]:
+    with tabs[agent_quality_index + 3]:
         st.subheader("System Status")
         report = run_health_checks()
         status_label = report.status.upper()

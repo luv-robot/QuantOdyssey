@@ -9,6 +9,7 @@ from sqlalchemy import Column, DateTime, String, Text, create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.models import (
+    AgentEvalRun,
     BacktestReport,
     BacktestValidationReport,
     BaselineComparisonReport,
@@ -64,6 +65,7 @@ from app.models import (
     StrategyRegistryEntry,
     StrategySimilarityResult,
     StrategyVersion,
+    SupervisorReport,
     TradeRecord,
     TradeSummary,
     ThesisPreReview,
@@ -369,6 +371,26 @@ class ResearchHarnessCycleRecord(Base):
     signal_id = Column(String, index=True, nullable=False)
     thesis_id = Column(String, index=True)
     source = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AgentEvalRunRecord(Base):
+    __tablename__ = "agent_eval_runs"
+
+    run_id = Column(String, primary_key=True)
+    suite_version = Column(String, index=True, nullable=False)
+    passed = Column(String, index=True, nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SupervisorReportRecord(Base):
+    __tablename__ = "supervisor_reports"
+
+    report_id = Column(String, primary_key=True)
+    status = Column(String, index=True, nullable=False)
+    source_agent_eval_run_id = Column(String, index=True)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1579,6 +1601,68 @@ class QuantRepository:
                 query = query.filter(ResearchHarnessCycleRecord.signal_id == signal_id)
             records = query.order_by(ResearchHarnessCycleRecord.created_at.desc()).limit(limit).all()
             return [_load(ResearchHarnessCycle, record.payload) for record in records]
+
+    def save_agent_eval_run(self, run: AgentEvalRun) -> AgentEvalRun:
+        with self._session() as session:
+            session.merge(
+                AgentEvalRunRecord(
+                    run_id=run.run_id,
+                    suite_version=run.suite_version,
+                    passed=str(run.passed).lower(),
+                    payload=_dump(run),
+                )
+            )
+        return run
+
+    def get_agent_eval_run(self, run_id: str) -> Optional[AgentEvalRun]:
+        record = self._get(AgentEvalRunRecord, run_id)
+        return None if record is None else _load(AgentEvalRun, record.payload)
+
+    def query_agent_eval_runs(
+        self,
+        suite_version: Optional[str] = None,
+        passed: Optional[bool] = None,
+        limit: int = 20,
+    ) -> list[AgentEvalRun]:
+        with self._session() as session:
+            query = session.query(AgentEvalRunRecord)
+            if suite_version is not None:
+                query = query.filter(AgentEvalRunRecord.suite_version == suite_version)
+            if passed is not None:
+                query = query.filter(AgentEvalRunRecord.passed == str(passed).lower())
+            records = query.order_by(AgentEvalRunRecord.created_at.desc()).limit(limit).all()
+            return [_load(AgentEvalRun, record.payload) for record in records]
+
+    def save_supervisor_report(self, report: SupervisorReport) -> SupervisorReport:
+        with self._session() as session:
+            session.merge(
+                SupervisorReportRecord(
+                    report_id=report.report_id,
+                    status=report.status.value,
+                    source_agent_eval_run_id=report.source_agent_eval_run_id,
+                    payload=_dump(report),
+                )
+            )
+        return report
+
+    def get_supervisor_report(self, report_id: str) -> Optional[SupervisorReport]:
+        record = self._get(SupervisorReportRecord, report_id)
+        return None if record is None else _load(SupervisorReport, record.payload)
+
+    def query_supervisor_reports(
+        self,
+        status: Optional[str] = None,
+        source_agent_eval_run_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[SupervisorReport]:
+        with self._session() as session:
+            query = session.query(SupervisorReportRecord)
+            if status is not None:
+                query = query.filter(SupervisorReportRecord.status == status)
+            if source_agent_eval_run_id is not None:
+                query = query.filter(SupervisorReportRecord.source_agent_eval_run_id == source_agent_eval_run_id)
+            records = query.order_by(SupervisorReportRecord.created_at.desc()).limit(limit).all()
+            return [_load(SupervisorReport, record.payload) for record in records]
 
     def save_public_thesis_card(self, card: PublicThesisCard) -> PublicThesisCard:
         with self._session() as session:

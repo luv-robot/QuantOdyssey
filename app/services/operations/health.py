@@ -23,6 +23,8 @@ DEFAULT_TABLES = (
     "research_tasks",
     "thesis_inbox",
     "research_harness_cycles",
+    "agent_eval_runs",
+    "supervisor_reports",
     "public_thesis_cards",
     "public_strategy_cards",
     "event_definition_sensitivity_reports",
