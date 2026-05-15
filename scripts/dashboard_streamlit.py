@@ -20,7 +20,8 @@ from app.models import (  # noqa: E402
     ThesisStatus,
 )
 from app.services.operations import run_health_checks  # noqa: E402
-from app.services.market_data import build_orderflow_health_report  # noqa: E402
+from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
+from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
 from app.services.researcher import build_research_design_draft, build_thesis_pre_review  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
@@ -50,6 +51,7 @@ KEY_TABLES = [
     "experiment_manifests",
     "experiment_queue",
     "baseline_comparisons",
+    "review_sessions",
     "robustness_reports",
     "cross_symbol_validations",
     "real_backtest_validation_suites",
@@ -228,6 +230,142 @@ def render_research_pipeline(engine, database_url: str) -> None:
     else:
         st.warning("Pipeline completed, but no candidate met the full criteria.")
     st.json(result.model_dump(mode="json"))
+
+
+def render_research_workbench(engine, database_url: str) -> None:
+    st.subheader("Research Workbench")
+    recent_theses = recent_records(engine, "research_theses", limit=8)
+    latest_orderflow = _latest_record(engine, "strategy_family_orderflow_acceptance_reports")
+    latest_review_session = _latest_record(engine, "review_sessions")
+    latest_walk_forward = _latest_record(engine, "strategy_family_walk_forward_reports")
+    latest_monte_carlo = _latest_record(engine, "strategy_family_monte_carlo_reports")
+    latest_tasks = recent_records(engine, "research_tasks", limit=20)
+
+    columns = st.columns(5)
+    columns[0].metric("Theses", _metric_count(engine, "research_theses"))
+    columns[1].metric("Review Sessions", _metric_count(engine, "review_sessions"))
+    columns[2].metric("Open Tasks", _open_task_count(latest_tasks))
+    columns[3].metric("Orderflow Bars", _metric_count(engine, "orderflow_bars"))
+    columns[4].metric(
+        "OF Events",
+        0 if latest_orderflow is None else latest_orderflow.get("events_with_orderflow", 0),
+    )
+
+    queue_col, evidence_col, action_col = st.columns([0.85, 1.2, 0.95])
+    with queue_col:
+        st.write("### Research Queue")
+        if recent_theses:
+            for thesis in recent_theses[:5]:
+                st.write(f"**{thesis.get('title', thesis.get('thesis_id'))}**")
+                st.caption(f"{thesis.get('status')} | {thesis.get('thesis_id')}")
+        else:
+            st.info("No thesis records yet.")
+        st.write("### Harness Backlog")
+        if latest_tasks:
+            for task in latest_tasks[:6]:
+                status = task.get("status")
+                task_type = task.get("task_type")
+                priority = task.get("priority_score")
+                if task.get("approval_required"):
+                    st.warning(f"{task_type} | priority {priority} | {status}")
+                else:
+                    st.info(f"{task_type} | priority {priority} | {status}")
+        else:
+            st.info("No recent harness tasks.")
+
+    with evidence_col:
+        st.write("### Baseline-Implied Regime")
+        board, regime, error = _build_dashboard_baseline_regime()
+        if error:
+            st.warning(error)
+        elif board is not None and regime is not None:
+            regime_cols = st.columns(3)
+            regime_cols[0].metric("Regime", regime["regime_label"])
+            regime_cols[1].metric("Confidence", f"{regime['confidence']:.1%}")
+            regime_cols[2].metric("Best Baseline", board.get("best_family") or "n/a")
+            st.dataframe(
+                [
+                    {
+                        "baseline": row["strategy_family"],
+                        "return": row["total_return"],
+                        "profit_factor": row["profit_factor"],
+                        "sharpe": row["sharpe"],
+                        "max_drawdown": row["max_drawdown"],
+                        "trades": row["trades"],
+                        "positive_cells": row["positive_cell_count"],
+                        "tested_cells": row["tested_cell_count"],
+                    }
+                    for row in board["rows"]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.write("**Regime Components**")
+            st.dataframe(
+                [
+                    {"component": name, "score": score}
+                    for name, score in regime.get("component_scores", {}).items()
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            for finding in regime.get("findings", []):
+                st.caption(finding)
+        else:
+            st.info("No baseline regime data available.")
+
+    with action_col:
+        st.write("### Evidence Court")
+        _render_compact_validation_card("Orderflow Acceptance", latest_orderflow)
+        _render_compact_validation_card("Walk Forward", latest_walk_forward)
+        _render_compact_validation_card("Monte Carlo", latest_monte_carlo)
+        st.write("### AI Review")
+        if latest_review_session:
+            maturity = latest_review_session.get("maturity_score") or {}
+            st.metric("Maturity Score", f"{maturity.get('overall_score', 0):.2f}")
+            evidence_against = latest_review_session.get("evidence_against") or []
+            blind_spots = latest_review_session.get("blind_spots") or []
+            questions = latest_review_session.get("ai_questions") or []
+            experiments = latest_review_session.get("next_experiments") or []
+            if evidence_against:
+                st.write("**Evidence Against**")
+                for claim in evidence_against[:3]:
+                    st.warning(claim.get("statement", "evidence against"))
+            if blind_spots:
+                st.write("**Blind Spots**")
+                for claim in blind_spots[:3]:
+                    st.info(claim.get("statement", "blind spot"))
+            if questions:
+                st.write("**AI Questions**")
+                for question in questions[:3]:
+                    st.caption(question.get("question", "question"))
+            if experiments:
+                st.write("**Next Experiments**")
+                for experiment in experiments[:3]:
+                    st.caption(experiment)
+        else:
+            st.info("No ReviewSession records yet.")
+
+    st.write("### Human-Assist Penetration Snapshot")
+    snapshot = _human_assist_snapshot(
+        board=board if "board" in locals() else None,
+        regime=regime if "regime" in locals() else None,
+        latest_orderflow=latest_orderflow,
+        latest_review_session=latest_review_session,
+        latest_tasks=latest_tasks,
+    )
+    score_cols = st.columns(4)
+    score_cols[0].metric("Helpfulness", f"{snapshot['score']:.0f}/100")
+    score_cols[1].metric("Baseline Pressure", snapshot["baseline_pressure"])
+    score_cols[2].metric("Review Depth", snapshot["review_depth"])
+    score_cols[3].metric("Next-Step Clarity", snapshot["next_step_clarity"])
+    for item in snapshot["findings"]:
+        if item["level"] == "good":
+            st.success(item["message"])
+        elif item["level"] == "warn":
+            st.warning(item["message"])
+        else:
+            st.info(item["message"])
 
 
 def render_research_run_detail(engine) -> None:
@@ -435,6 +573,128 @@ def _records_where_payload_field(engine, table_name: str, field: str, value: str
     return [record for record in records if record.get(field) == value]
 
 
+def _latest_record(engine, table_name: str) -> dict | None:
+    records = recent_records(engine, table_name, limit=1)
+    return records[0] if records else None
+
+
+def _metric_count(engine, table_name: str) -> int | str:
+    count = table_count(engine, table_name)
+    return "n/a" if count is None else count
+
+
+def _open_task_count(tasks: list[dict]) -> int:
+    return sum(1 for task in tasks if task.get("status") not in {"completed", "cancelled"})
+
+
+@st.cache_data(ttl=300)
+def _build_dashboard_baseline_regime() -> tuple[dict | None, dict | None, str | None]:
+    try:
+        candles_by_cell = _load_dashboard_candles()
+        board = build_strategy_family_baseline_board(candles_by_cell)
+        regime = build_baseline_implied_regime_report(board)
+        return board.model_dump(mode="json"), regime.model_dump(mode="json"), None
+    except Exception as exc:
+        return None, None, f"Baseline regime scan unavailable: {exc}"
+
+
+def _load_dashboard_candles():
+    data_dir = Path(os.getenv("DASHBOARD_BASELINE_DATA_DIR", "freqtrade_user_data/data/binance/futures"))
+    symbols = _env_list("DASHBOARD_BASELINE_SYMBOLS") or ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]
+    timeframes = _env_list("DASHBOARD_BASELINE_TIMEFRAMES") or ["1h"]
+    max_candles = int(os.getenv("DASHBOARD_BASELINE_MAX_CANDLES", "20000"))
+    candles_by_cell = {}
+    for symbol in symbols:
+        for timeframe in timeframes:
+            path = data_dir / f"{_freqtrade_symbol(symbol)}-{timeframe}-futures.feather"
+            if not path.exists():
+                continue
+            candles = load_freqtrade_ohlcv(path, symbol, timeframe)
+            if max_candles > 0 and len(candles) > max_candles:
+                candles = candles[-max_candles:]
+            candles_by_cell[(symbol, timeframe)] = candles
+    if not candles_by_cell:
+        raise ValueError(f"No OHLCV files found under {data_dir}.")
+    return candles_by_cell
+
+
+def _freqtrade_symbol(symbol: str) -> str:
+    return symbol.replace("/", "_").replace(":", "_")
+
+
+def _render_compact_validation_card(title: str, record: dict | None) -> None:
+    if not record:
+        st.info(f"{title}: no record")
+        return
+    passed = record.get("passed")
+    if passed is True:
+        st.success(f"{title}: passed")
+    elif passed is False:
+        st.warning(f"{title}: not passed")
+    else:
+        st.info(f"{title}: recorded")
+    metrics = {
+        key: record.get(key)
+        for key in [
+            "events_with_orderflow",
+            "confirmation_rate",
+            "pass_rate",
+            "probability_of_loss",
+            "sampled_trade_count",
+        ]
+        if key in record
+    }
+    if metrics:
+        st.json(metrics)
+
+
+def _human_assist_snapshot(
+    *,
+    board: dict | None,
+    regime: dict | None,
+    latest_orderflow: dict | None,
+    latest_review_session: dict | None,
+    latest_tasks: list[dict],
+) -> dict:
+    score = 0
+    findings = []
+    if board and board.get("rows"):
+        score += 25
+        findings.append({"level": "good", "message": "Generic baselines are available for strategy pressure-testing."})
+    else:
+        findings.append({"level": "warn", "message": "Baseline board is missing, so strategy claims lack a reference yardstick."})
+    if regime and regime.get("regime_label"):
+        score += 20
+        findings.append({"level": "good", "message": f"Baseline-implied regime: {regime['regime_label']}."})
+    if latest_orderflow and latest_orderflow.get("events_with_orderflow", 0) > 0:
+        score += 20
+        findings.append(
+            {
+                "level": "good",
+                "message": f"Orderflow validation has {latest_orderflow.get('events_with_orderflow', 0)} overlapping event(s).",
+            }
+        )
+    else:
+        findings.append({"level": "warn", "message": "Orderflow validation has not yet overlapped enough events."})
+    if latest_review_session:
+        score += 20
+        findings.append({"level": "good", "message": "AI ReviewSession exists and can drive follow-up questioning."})
+    else:
+        findings.append({"level": "info", "message": "No ReviewSession is available for the latest research state."})
+    if latest_tasks:
+        score += 15
+        findings.append({"level": "good", "message": f"Harness has generated {len(latest_tasks)} recent task(s)."})
+    else:
+        findings.append({"level": "info", "message": "Harness task backlog is empty."})
+    return {
+        "score": min(100, score),
+        "baseline_pressure": "available" if board and board.get("rows") else "missing",
+        "review_depth": "available" if latest_review_session else "missing",
+        "next_step_clarity": "available" if latest_tasks else "thin",
+        "findings": findings,
+    }
+
+
 def _render_strategy_family_validation_followups(engine, thesis_id: str) -> None:
     universe_reports = _records_where_payload_field(engine, "failed_breakout_universe_reports", "thesis_id", thesis_id)
     if not universe_reports:
@@ -575,21 +835,29 @@ def _env_list(name: str) -> list[str]:
 
 def main() -> None:
     st.set_page_config(page_title="Quant Odyssey", layout="wide")
-    st.title("Quant Odyssey Research Console")
+    st.title("Quant Odyssey Research Workbench")
 
     engine, database_url = connect_database()
     st.caption(f"Database: `{database_url}`")
 
-    counts = {table: table_count(engine, table) for table in KEY_TABLES}
-    columns = st.columns(len(KEY_TABLES))
-    for column, table in zip(columns, KEY_TABLES):
-        value = counts[table]
+    summary_tables = [
+        "research_theses",
+        "review_sessions",
+        "research_tasks",
+        "orderflow_bars",
+        "backtests",
+        "reviews",
+    ]
+    columns = st.columns(len(summary_tables))
+    for column, table in zip(columns, summary_tables):
+        value = table_count(engine, table)
         column.metric(table.replace("_", " ").title(), "n/a" if value is None else value)
 
     tabs = st.tabs(
         [
-            "Research Pipeline",
-            "Research Run Detail",
+            "Research Workbench",
+            "Run Pipeline",
+            "Run Detail",
             "Signals",
             "Regimes",
             "Data Quality",
@@ -652,12 +920,15 @@ def main() -> None:
     }
 
     with tabs[0]:
-        render_research_pipeline(engine, database_url)
+        render_research_workbench(engine, database_url)
 
     with tabs[1]:
+        render_research_pipeline(engine, database_url)
+
+    with tabs[2]:
         render_research_run_detail(engine)
 
-    for tab, label in zip(tabs[2 : 2 + len(table_by_tab)], table_by_tab):
+    for tab, label in zip(tabs[3 : 3 + len(table_by_tab)], table_by_tab):
         table = table_by_tab[label]
         with tab:
             st.subheader(label)
