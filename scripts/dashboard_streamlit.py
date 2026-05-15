@@ -703,7 +703,7 @@ def render_global_ai_assistant(engine, database_url: str) -> None:
         st.session_state.qod_assistant_messages = []
 
     question = st.chat_input(
-        "问 Quant Odyssey：策略为什么被拒？现在 regime 如何？提交 thesis 要补什么？",
+        "问 Quant Odyssey，或直接粘贴 thesis：策略为什么被拒？现在 regime 如何？提交 thesis 要补什么？",
         key="qod_global_chat_input",
     )
     if not question or not question.strip():
@@ -712,10 +712,15 @@ def render_global_ai_assistant(engine, database_url: str) -> None:
     st.session_state.qod_assistant_messages.append({"role": "user", "content": question.strip()})
     context = _build_assistant_context(engine)
     repository = QuantRepository(database_url)
+    available_signals = [
+        MarketSignal.model_validate(payload)
+        for payload in recent_records(engine, "signals", limit=25)
+    ]
     result = build_dashboard_assistant_answer(
         question.strip(),
         context=context,
         repository=repository,
+        available_signals=available_signals,
     )
     answer = result.answer
     st.session_state.qod_assistant_messages.append({"role": "assistant", "content": answer})

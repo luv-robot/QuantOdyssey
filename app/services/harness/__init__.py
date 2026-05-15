@@ -14,6 +14,10 @@ from app.services.harness.inbox import (
     convert_inbox_item_to_thesis,
     mark_inbox_item_converted,
 )
+from app.services.harness.intake import (
+    ThesisIntakeHarnessResult,
+    build_thesis_intake_harness_cycle,
+)
 from app.services.harness.research_loop import build_research_harness_cycle
 from app.services.harness.scratchpad import (
     append_scratchpad_event,
@@ -35,10 +39,12 @@ from app.services.harness.validation import (
 
 __all__ = [
     "build_research_harness_cycle",
+    "ThesisIntakeHarnessResult",
     "apply_harness_budget_guardrails",
     "append_scratchpad_event",
     "build_thesis_inbox_digest",
     "build_thesis_inbox_items",
+    "build_thesis_intake_harness_cycle",
     "convert_inbox_item_to_thesis",
     "create_scratchpad_run",
     "mark_inbox_item_converted",

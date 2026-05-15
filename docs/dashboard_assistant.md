@@ -28,6 +28,24 @@ If `DEEPSEEK_API_KEY` is missing or the API call fails, the assistant falls back
 internal router. The fallback can still point users to pages such as `Research Workbench`,
 `Run Detail`, `Strategy Catalog`, `Metric Audit`, and `System Status`.
 
+## Thesis Intake Action
+
+When the bottom input receives a complete thesis submission, the assistant routes it through a local
+action instead of sending the full thesis text to DeepSeek. This action creates:
+
+- `ResearchThesis`
+- `ThesisDataContract`
+- `ThesisPreReview`
+- `ResearchDesignDraft`
+- `EventEpisode`
+- first-pass `ResearchFinding`
+- first-pass `ResearchTask` queue
+- `.qo/scratchpad` trace
+
+This is not a strategy run. It is the pre-research gate that asks whether the idea is structured,
+whether the requested timeframe/data can be supported, and which baseline/event-frequency/regime
+tests should come before code generation.
+
 ## Logging
 
 Every assistant request is stored as:

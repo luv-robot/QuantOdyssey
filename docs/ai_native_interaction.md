@@ -36,6 +36,29 @@ Next actions
 5. Harness executes the workflow and reports progress.
 6. AI links the user to artifacts that already exist in the product.
 
+## Implemented V1
+
+The global dashboard assistant can now accept a complete natural-language thesis directly from the
+bottom input. When the message looks like a thesis submission, the system handles it locally rather
+than sending the full text to an external LLM:
+
+```text
+assistant message
+-> ResearchThesis
+-> ThesisDataContract
+-> ThesisPreReview
+-> ResearchDesignDraft
+-> EventEpisode
+-> ResearchFinding
+-> ResearchTask queue
+-> ResearchHarnessCycle
+-> .qo/scratchpad intake trace
+```
+
+The first Harness task queue is intentionally research-oriented. It creates baseline, data
+sufficiency, event-frequency, or regime-bucket tasks before strategy code generation. This keeps the
+workflow focused on improving research quality rather than immediately optimizing a variant.
+
 ## Guardrails
 
 - Natural language can fill fields, but cannot bypass data contracts.

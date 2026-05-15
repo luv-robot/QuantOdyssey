@@ -67,6 +67,21 @@ HumanResearchPipelineResult
 -> ResearchHarnessCycle
 ```
 
+Conversation-first intake now has its own lightweight loop:
+
+```text
+Assistant thesis submission
+-> data contract / pre-review / design draft
+-> intake EventEpisode
+-> first ResearchFinding
+-> first ResearchTask queue
+-> scratchpad trace
+```
+
+This loop does not claim the thesis is valid and does not run expensive tests automatically. Its job
+is to turn a raw idea into a supervised backlog that can ask: do we have the right data, enough
+events, a matched baseline, and a sane evaluation profile?
+
 `ThesisInboxItem` is the proactive communication layer. Harness may suggest ideas from baselines,
 regime shifts, failure findings, data gaps, watchlist candidates, and ReviewSession next experiments.
 These items remain `suggested` until the human accepts, edits, rejects, archives, or converts them
