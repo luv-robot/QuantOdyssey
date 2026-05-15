@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -22,7 +23,7 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Print full SupervisorReport JSON.")
     args = parser.parse_args()
 
-    repository = QuantRepository(args.database_url)
+    repository = QuantRepository(args.database_url or os.getenv("DATABASE_URL") or "sqlite+pysqlite:///:memory:")
     cases = build_builtin_agent_eval_cases()
     responses = _load_responses(args.responses, cases)
     eval_run = run_agent_eval_suite(responses, cases=cases)
