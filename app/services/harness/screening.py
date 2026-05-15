@@ -20,6 +20,13 @@ from app.models import (
     StrategyScreeningAction,
     StrategyScreeningDecision,
 )
+from app.services.metrics import (
+    compound_return,
+    max_drawdown,
+    max_drawdown_from_equity_returns,
+    profit_factor,
+    sharpe_ratio,
+)
 
 
 DATA_LEVEL_ORDER = {
@@ -325,14 +332,17 @@ def _cash_row() -> StrategyFamilyBaselineRow:
 def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], *, mode: str) -> StrategyFamilyBaselineRow:
     btc_cells = [(cell, candles) for cell, candles in candles_by_cell.items() if cell[0].upper().startswith("BTC/")]
     returns: list[float] = []
+    drawdowns: list[float] = []
     for _, candles in btc_cells:
         sorted_candles = sorted(candles, key=lambda item: item.open_time)
         if len(sorted_candles) < 2:
             continue
         if mode == "dca":
             returns.append(_dca_return(sorted_candles))
+            drawdowns.append(_dca_max_drawdown(sorted_candles))
         else:
             returns.append(sorted_candles[-1].close / sorted_candles[0].close - 1)
+            drawdowns.append(_hold_max_drawdown(sorted_candles))
     total_return = mean(returns) if returns else 0
     name = "passive_btc_dca" if mode == "dca" else "passive_btc_buy_and_hold"
     description = (
@@ -346,7 +356,7 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
         total_return=round(total_return, 6),
         profit_factor=1.0 if total_return > 0 else 0,
         sharpe=None,
-        max_drawdown=round(min(total_return, 0), 6),
+        max_drawdown=round(min(drawdowns or [0]), 6),
         trades=len(returns),
         positive_cell_count=sum(1 for item in returns if item > 0),
         tested_cell_count=len(returns),
@@ -355,14 +365,17 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
 
 def _equal_weight_hold_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
     returns: list[float] = []
+    drawdowns: list[float] = []
     for candles in candles_by_cell.values():
         sorted_candles = sorted(candles, key=lambda item: item.open_time)
         if len(sorted_candles) >= 2 and sorted_candles[0].close > 0:
             returns.append(sorted_candles[-1].close / sorted_candles[0].close - 1)
-    return _row_from_returns(
-        "passive_equal_weight_buy_and_hold",
-        "Equal-weight passive buy-and-hold across available symbols/timeframes.",
-        returns,
+            drawdowns.append(_hold_max_drawdown(sorted_candles))
+    return _row_from_cell_returns(
+        strategy_family="passive_equal_weight_buy_and_hold",
+        description="Equal-weight passive buy-and-hold across available symbols/timeframes.",
+        cell_returns=returns,
+        max_drawdown=min(drawdowns or [0]),
     )
 
 
@@ -378,6 +391,22 @@ def _dca_return(candles: list[OhlcvCandle], steps: int = 12) -> float:
     if invested == 0:
         return 0
     return units * candles[-1].close / invested - 1
+
+
+def _dca_max_drawdown(candles: list[OhlcvCandle], steps: int = 12) -> float:
+    if len(candles) < 2:
+        return 0
+    interval = max(1, len(candles) // steps)
+    units = 0.0
+    invested = 0.0
+    equity_returns: list[float] = []
+    for index, candle in enumerate(candles):
+        if index % interval == 0 and candle.close > 0:
+            units += 1.0 / candle.close
+            invested += 1.0
+        if invested > 0:
+            equity_returns.append(units * candle.close / invested - 1)
+    return max_drawdown_from_equity_returns(equity_returns)
 
 
 def _cross_sectional_momentum_row(
@@ -416,14 +445,14 @@ def _cross_sectional_momentum_row(
 
 
 def _time_series_trend_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
-    returns = [
-        _fixed_horizon_signal_return(candles, side="long", mode="momentum", lookback=96, horizon=24)
+    returns_by_cell = [
+        _fixed_horizon_signal_returns(candles, side="long", mode="momentum", lookback=96, horizon=24)
         for candles in candles_by_cell.values()
     ]
-    return _row_from_returns(
+    return _row_from_trade_returns(
         "time_series_trend",
         "Time-series trend baseline using positive trailing return as a long signal.",
-        returns,
+        returns_by_cell,
     )
 
 
@@ -433,29 +462,40 @@ def _breakout_trend_row(
     lookback: int = 96,
     horizon: int = 24,
 ) -> StrategyFamilyBaselineRow:
-    returns = [_donchian_breakout_return(candles, lookback=lookback, horizon=horizon) for candles in candles_by_cell.values()]
-    return _row_from_returns(
+    returns_by_cell = [
+        _donchian_breakout_returns(candles, lookback=lookback, horizon=horizon) for candles in candles_by_cell.values()
+    ]
+    return _row_from_trade_returns(
         "breakout_trend",
         "Donchian-style breakout trend baseline.",
-        returns,
+        returns_by_cell,
     )
 
 
 def _mean_reversion_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
-    returns = [_fixed_horizon_signal_return(candles, side="long", mode="mean_reversion") for candles in candles_by_cell.values()]
-    return _row_from_returns("range_mean_reversion", "Simple OHLCV range mean-reversion baseline.", returns)
+    returns_by_cell = [
+        _fixed_horizon_signal_returns(candles, side="long", mode="mean_reversion") for candles in candles_by_cell.values()
+    ]
+    return _row_from_trade_returns("range_mean_reversion", "Simple OHLCV range mean-reversion baseline.", returns_by_cell)
 
 
 def _grid_range_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
-    returns = [_grid_proxy_return(candles) for candles in candles_by_cell.values()]
-    return _row_from_returns(
+    returns_by_cell = [_grid_proxy_returns(candles) for candles in candles_by_cell.values()]
+    return _row_from_trade_returns(
         "grid_range",
         "Range-harvesting grid proxy using rolling midline deviations with bounded inventory.",
-        returns,
+        returns_by_cell,
     )
 
 
-def _fixed_horizon_signal_return(candles: list[OhlcvCandle], *, side: str, mode: str, lookback: int = 48, horizon: int = 12) -> float:
+def _fixed_horizon_signal_returns(
+    candles: list[OhlcvCandle],
+    *,
+    side: str,
+    mode: str,
+    lookback: int = 48,
+    horizon: int = 12,
+) -> list[float]:
     sorted_candles = sorted(candles, key=lambda item: item.open_time)
     returns: list[float] = []
     index = lookback
@@ -473,10 +513,10 @@ def _fixed_horizon_signal_return(candles: list[OhlcvCandle], *, side: str, mode:
             index += horizon
         else:
             index += 1
-    return sum(returns)
+    return returns
 
 
-def _donchian_breakout_return(candles: list[OhlcvCandle], *, lookback: int, horizon: int) -> float:
+def _donchian_breakout_returns(candles: list[OhlcvCandle], *, lookback: int, horizon: int) -> list[float]:
     sorted_candles = sorted(candles, key=lambda item: item.open_time)
     returns: list[float] = []
     index = lookback
@@ -487,10 +527,10 @@ def _donchian_breakout_return(candles: list[OhlcvCandle], *, lookback: int, hori
             index += horizon
         else:
             index += 1
-    return sum(returns)
+    return returns
 
 
-def _grid_proxy_return(candles: list[OhlcvCandle], *, lookback: int = 48, horizon: int = 6) -> float:
+def _grid_proxy_returns(candles: list[OhlcvCandle], *, lookback: int = 48, horizon: int = 6) -> list[float]:
     sorted_candles = sorted(candles, key=lambda item: item.open_time)
     returns: list[float] = []
     index = lookback
@@ -512,7 +552,7 @@ def _grid_proxy_return(candles: list[OhlcvCandle], *, lookback: int = 48, horizo
             index += horizon
         else:
             index += 1
-    return sum(returns)
+    return returns
 
 
 def _cells_by_timeframe(
@@ -526,21 +566,70 @@ def _cells_by_timeframe(
 
 def _row_from_returns(strategy_family: str, description: str, returns: list[float]) -> StrategyFamilyBaselineRow:
     usable = [item for item in returns if item != 0]
-    total_return = mean(returns) if returns else 0
-    gross_profit = sum(item for item in usable if item > 0)
-    gross_loss = abs(sum(item for item in usable if item < 0))
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (99.0 if gross_profit > 0 else 0.0)
     return StrategyFamilyBaselineRow(
         strategy_family=strategy_family,
         description=description,
-        total_return=round(total_return, 6),
-        profit_factor=round(profit_factor, 6),
-        sharpe=round(mean(usable) / pstdev(usable), 6) if len(usable) > 1 and pstdev(usable) > 0 else None,
-        max_drawdown=round(min(min(usable or [0]), 0), 6),
+        total_return=round(compound_return(returns), 6),
+        profit_factor=round(profit_factor(usable), 6),
+        sharpe=sharpe_ratio(usable),
+        max_drawdown=round(max_drawdown(usable), 6),
         trades=len(usable),
         positive_cell_count=sum(1 for item in returns if item > 0),
         tested_cell_count=len(returns),
     )
+
+
+def _row_from_cell_returns(
+    *,
+    strategy_family: str,
+    description: str,
+    cell_returns: list[float],
+    max_drawdown: float,
+) -> StrategyFamilyBaselineRow:
+    usable = [item for item in cell_returns if item != 0]
+    total_return = mean(cell_returns) if cell_returns else 0
+    return StrategyFamilyBaselineRow(
+        strategy_family=strategy_family,
+        description=description,
+        total_return=round(total_return, 6),
+        profit_factor=round(profit_factor(usable), 6),
+        sharpe=sharpe_ratio(usable),
+        max_drawdown=round(min(max_drawdown, 0), 6),
+        trades=len(usable),
+        positive_cell_count=sum(1 for item in cell_returns if item > 0),
+        tested_cell_count=len(cell_returns),
+    )
+
+
+def _row_from_trade_returns(
+    strategy_family: str,
+    description: str,
+    returns_by_cell: list[list[float]],
+) -> StrategyFamilyBaselineRow:
+    trade_returns = [item for returns in returns_by_cell for item in returns if item != 0]
+    cell_returns = [compound_return(returns) for returns in returns_by_cell]
+    total_return = mean(cell_returns) if cell_returns else 0
+    drawdowns = [max_drawdown(returns) for returns in returns_by_cell if returns]
+    return StrategyFamilyBaselineRow(
+        strategy_family=strategy_family,
+        description=description,
+        total_return=round(total_return, 6),
+        profit_factor=round(profit_factor(trade_returns), 6),
+        sharpe=sharpe_ratio(trade_returns),
+        max_drawdown=round(min(drawdowns or [0]), 6),
+        trades=len(trade_returns),
+        positive_cell_count=sum(1 for item in cell_returns if item > 0),
+        tested_cell_count=len(cell_returns),
+    )
+
+
+def _hold_max_drawdown(candles: list[OhlcvCandle]) -> float:
+    sorted_candles = sorted(candles, key=lambda item: item.open_time)
+    if len(sorted_candles) < 2 or sorted_candles[0].close <= 0:
+        return 0
+    base = sorted_candles[0].close
+    equity_returns = [candle.close / base - 1 for candle in sorted_candles]
+    return max_drawdown_from_equity_returns(equity_returns)
 
 
 def _baseline_strength(row: StrategyFamilyBaselineRow) -> float:

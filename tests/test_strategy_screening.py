@@ -37,6 +37,22 @@ def test_baseline_board_includes_btc_dca_with_buy_and_hold_group() -> None:
     assert any("DCA BTC" in finding or "DCA" in finding for finding in board.findings)
 
 
+def test_active_baseline_metrics_use_trade_level_returns_not_cell_returns() -> None:
+    candles_by_cell = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=400),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=400),
+    }
+
+    board = build_strategy_family_baseline_board(candles_by_cell)
+    trend = next(row for row in board.rows if row.strategy_family == "time_series_trend")
+    passive_btc = next(row for row in board.rows if row.strategy_family == "passive_btc_buy_and_hold")
+
+    assert trend.trades > trend.tested_cell_count
+    assert trend.profit_factor < 99
+    assert trend.max_drawdown < 0
+    assert passive_btc.max_drawdown < 0
+
+
 def test_baseline_board_excludes_failed_breakout_from_generic_baselines() -> None:
     board = build_strategy_family_baseline_board(
         {("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT")},

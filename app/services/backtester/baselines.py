@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import timezone
-from statistics import mean, pstdev
 
 from app.models import (
     BacktestReport,
@@ -13,6 +12,7 @@ from app.models import (
     OpenInterestPoint,
     SignalType,
 )
+from app.services.metrics import compound_return, max_drawdown, profit_factor, sharpe_ratio
 
 
 def compare_to_event_level_baselines(
@@ -401,46 +401,15 @@ def _baseline_result_from_returns(name: str, description: str, returns: list[flo
             max_drawdown=0,
             trades=0,
         )
-    gross_profit = sum(item for item in returns if item > 0)
-    gross_loss = abs(sum(item for item in returns if item < 0))
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (99.0 if gross_profit > 0 else 0)
-    total_return = _compound_return(returns)
     return BaselineResult(
         name=name,
         description=description,
-        total_return=round(total_return, 6),
-        profit_factor=round(profit_factor, 6),
-        sharpe=_sharpe(returns),
-        max_drawdown=round(_max_drawdown(returns), 6),
+        total_return=round(compound_return(returns), 6),
+        profit_factor=round(profit_factor(returns), 6),
+        sharpe=sharpe_ratio(returns),
+        max_drawdown=round(max_drawdown(returns), 6),
         trades=len(returns),
     )
-
-
-def _compound_return(returns: list[float]) -> float:
-    equity = 1.0
-    for item in returns:
-        equity *= 1 + item
-    return equity - 1
-
-
-def _max_drawdown(returns: list[float]) -> float:
-    equity = 1.0
-    peak = 1.0
-    drawdown = 0.0
-    for item in returns:
-        equity *= 1 + item
-        peak = max(peak, equity)
-        drawdown = min(drawdown, equity / peak - 1)
-    return drawdown
-
-
-def _sharpe(returns: list[float]) -> float | None:
-    if len(returns) < 2:
-        return None
-    stdev = pstdev(returns)
-    if stdev == 0:
-        return None
-    return round(mean(returns) / stdev * (len(returns) ** 0.5), 6)
 
 
 def _latest_percentile(values: list[float], latest: float) -> float:

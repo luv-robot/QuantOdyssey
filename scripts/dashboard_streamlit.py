@@ -22,6 +22,7 @@ from app.models import (  # noqa: E402
 from app.services.operations import run_health_checks  # noqa: E402
 from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
 from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
+from app.services.metrics import performance_metric_registry  # noqa: E402
 from app.services.researcher import build_research_design_draft, build_thesis_pre_review  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
@@ -366,6 +367,48 @@ def render_research_workbench(engine, database_url: str) -> None:
             st.warning(item["message"])
         else:
             st.info(item["message"])
+
+
+def render_metric_audit_registry() -> None:
+    st.subheader("Metric Audit Registry")
+    st.caption("Calculation principles and external calibration references for supervisor spot checks.")
+    definitions = performance_metric_registry()
+    rows = [
+        {
+            "metric": item.metric_id,
+            "name": item.display_name,
+            "category": item.category,
+            "formula": item.formula,
+            "unit": item.unit,
+            "description": item.description,
+        }
+        for item in definitions
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.write("**Principle Self-Check**")
+    for check in [
+        "Sequential strategy returns must be compounded, not summed.",
+        "Profit factor must use completed trade-level winners and losers, not symbol/timeframe cell returns.",
+        "Maximum drawdown must come from an equity curve peak-to-trough path, not final return or worst single trade.",
+        "Sharpe values must state whether they are annualized time-series Sharpe or per-trade proxy Sharpe.",
+        "Any high metric with tiny sample count is weak evidence until sample sufficiency checks pass.",
+    ]:
+        st.write(f"- {check}")
+
+    for item in definitions:
+        with st.expander(f"{item.display_name} | {item.metric_id}", expanded=False):
+            st.write(item.description)
+            st.code(item.formula)
+            st.write("**Implementation Notes**")
+            for note in item.implementation_notes:
+                st.write(f"- {note}")
+            st.write("**Audit Checks**")
+            for check in item.audit_checks:
+                st.write(f"- {check}")
+            st.write("**External References**")
+            for reference in item.external_references:
+                st.markdown(f"- [{reference['name']}]({reference['url']}): {reference['note']}")
 
 
 def render_research_run_detail(engine) -> None:
@@ -886,6 +929,7 @@ def main() -> None:
             "Resource Budgets",
             "Human Approval",
             "Orderflow Health",
+            "Metric Audit",
             "System Status",
         ]
     )
@@ -938,8 +982,11 @@ def main() -> None:
             for payload in payloads:
                 st.json(payload)
 
-    with tabs[-2]:
+    with tabs[-3]:
         render_orderflow_health(engine, database_url)
+
+    with tabs[-2]:
+        render_metric_audit_registry()
 
     with tabs[-1]:
         st.subheader("System Status")

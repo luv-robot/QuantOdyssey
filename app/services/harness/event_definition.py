@@ -20,6 +20,7 @@ from app.models import (
     ResearchTask,
     StrategyFamily,
 )
+from app.services.metrics import return_stats
 
 
 def build_event_definition_universe_report(
@@ -773,24 +774,7 @@ def _oi_retreat(oi_by_index: list[float | None], index: int, window: int) -> flo
 
 
 def _stats_from_returns(returns: list[float]) -> dict[str, float | None]:
-    if not returns:
-        return {
-            "average_return": 0.0,
-            "total_return": 0.0,
-            "profit_factor": 0.0,
-            "sharpe": None,
-            "max_drawdown": 0.0,
-        }
-    gross_profit = sum(item for item in returns if item > 0)
-    gross_loss = abs(sum(item for item in returns if item < 0))
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (99.0 if gross_profit > 0 else 0.0)
-    return {
-        "average_return": mean(returns),
-        "total_return": _compound_return(returns),
-        "profit_factor": profit_factor,
-        "sharpe": _sharpe(returns),
-        "max_drawdown": _max_drawdown(returns),
-    }
+    return return_stats(returns)
 
 
 def _select_best_trial(
@@ -1338,33 +1322,6 @@ def _failed_breakout_findings(
     else:
         findings.append(f"{robust_trial_count} trials passed the bounded robustness screen.")
     return findings
-
-
-def _compound_return(returns: list[float]) -> float:
-    equity = 1.0
-    for item in returns:
-        equity *= 1 + item
-    return equity - 1
-
-
-def _max_drawdown(returns: list[float]) -> float:
-    equity = 1.0
-    peak = 1.0
-    drawdown = 0.0
-    for item in returns:
-        equity *= 1 + item
-        peak = max(peak, equity)
-        drawdown = min(drawdown, equity / peak - 1)
-    return drawdown
-
-
-def _sharpe(returns: list[float]) -> float | None:
-    if len(returns) < 2:
-        return None
-    stdev = pstdev(returns)
-    if stdev == 0:
-        return None
-    return round(mean(returns) / stdev * (len(returns) ** 0.5), 6)
 
 
 def _latest_percentile(values: list[float], latest: float) -> float:
