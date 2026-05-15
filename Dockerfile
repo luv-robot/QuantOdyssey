@@ -15,6 +15,7 @@ COPY app ./app
 COPY scripts ./scripts
 COPY configs ./configs
 COPY freqtrade_user_data ./freqtrade_user_data
+COPY public ./public
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install ".[dashboard,orchestration]" freqtrade

@@ -28,6 +28,7 @@ from app.storage import QuantRepository  # noqa: E402
 
 
 DEFAULT_DB_URL = "sqlite+pysqlite:///market_data.sqlite3"
+DASHBOARD_ICON_PATH = ROOT / "public" / "assets" / "quantodyssey-mark.svg"
 KEY_TABLES = [
     "research_theses",
     "thesis_pre_reviews",
@@ -1131,7 +1132,8 @@ def render_dashboard_styles() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Quant Odyssey", layout="wide")
+    page_icon = DASHBOARD_ICON_PATH if DASHBOARD_ICON_PATH.exists() else "/assets/quantodyssey-mark.svg"
+    st.set_page_config(page_title="Quant Odyssey", page_icon=page_icon, layout="wide")
     render_dashboard_styles()
     st.markdown(
         """
