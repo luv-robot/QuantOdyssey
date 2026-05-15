@@ -49,6 +49,7 @@ class HarnessRunnerConfig:
     symbols: tuple[str, ...] = ("BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT")
     timeframes: tuple[str, ...] = ("5m", "15m")
     max_tasks: int = 5
+    max_queue_scan: int = 50
     max_candles: int = 5000
     max_trials: int = 80
     min_trade_count: int = 20
@@ -91,12 +92,14 @@ def run_research_harness_queue(
     )
     proposed_tasks = repository.query_research_tasks(
         status=ResearchTaskStatus.PROPOSED.value,
-        limit=config.max_tasks,
+        limit=max(config.max_tasks, config.max_queue_scan),
     )
     results: list[HarnessTaskRunResult] = []
     for task in proposed_tasks:
         result = _run_one_task(repository, task, config=config, scratchpad_run=scratchpad_run)
         results.append(result)
+        if sum(1 for item in results if item.skipped_reason is None) >= config.max_tasks:
+            break
 
     executed = sum(1 for result in results if result.skipped_reason is None)
     completed = sum(1 for result in results if result.status == ResearchTaskStatus.COMPLETED)

@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--symbol", action="append", default=[])
     parser.add_argument("--timeframe", action="append", default=[])
     parser.add_argument("--max-tasks", type=int, default=5)
+    parser.add_argument("--max-queue-scan", type=int, default=50)
     parser.add_argument("--max-candles", type=int, default=5000)
     parser.add_argument("--max-trials", type=int, default=80)
     parser.add_argument("--min-trade-count", type=int, default=20)
@@ -30,6 +31,7 @@ def main() -> int:
         symbols=tuple(args.symbol or ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]),
         timeframes=tuple(args.timeframe or ["5m", "15m"]),
         max_tasks=args.max_tasks,
+        max_queue_scan=args.max_queue_scan,
         max_candles=args.max_candles,
         max_trials=args.max_trials,
         min_trade_count=args.min_trade_count,

@@ -85,6 +85,43 @@ def test_harness_runner_skips_approval_required_task(tmp_path) -> None:
     assert repository.get_research_task(task.task_id).status == ResearchTaskStatus.PROPOSED
 
 
+def test_harness_runner_skipped_tasks_do_not_consume_execution_budget(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_ohlcv(data_dir / "BTC_USDT_USDT-5m-futures.feather", start_price=100)
+    repository = QuantRepository()
+    baseline_task = _task(
+        task_id="task_budget_baseline",
+        task_type=ResearchTaskType.BASELINE_TEST,
+        required_experiments=["run baseline board"],
+    ).model_copy(update={"created_at": datetime(2026, 1, 1, 10, 0)})
+    unsupported_task = _task(
+        task_id="task_budget_monte_carlo",
+        task_type=ResearchTaskType.MONTE_CARLO_TEST,
+        required_experiments=["run Monte Carlo"],
+    ).model_copy(update={"created_at": datetime(2026, 1, 1, 11, 0)})
+    repository.save_research_task(baseline_task)
+    repository.save_research_task(unsupported_task)
+
+    summary = run_research_harness_queue(
+        repository,
+        config=HarnessRunnerConfig(
+            data_dir=data_dir,
+            symbols=("BTC/USDT:USDT",),
+            timeframes=("5m",),
+            max_tasks=1,
+            max_queue_scan=5,
+            scratchpad_base_dir=tmp_path / "scratchpad",
+        ),
+    )
+
+    assert summary.considered == 2
+    assert summary.executed == 1
+    assert summary.skipped == 1
+    assert repository.get_research_task(baseline_task.task_id).status == ResearchTaskStatus.COMPLETED
+    assert repository.get_research_task(unsupported_task.task_id).status == ResearchTaskStatus.PROPOSED
+
+
 def _task(
     *,
     task_id: str,
