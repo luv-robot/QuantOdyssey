@@ -18,6 +18,7 @@ from app.storage import QuantRepository
 
 DEFAULT_TABLES = (
     "research_theses",
+    "thesis_data_contracts",
     "signals",
     "research_findings",
     "research_tasks",
