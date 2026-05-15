@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Quant Odyssey mark</title>
+  <desc id="desc">An abstract ship carrying market bars as sails above a wave.</desc>
+  <rect width="256" height="256" rx="48" fill="#f7f7f4"/>
+  <path d="M41 166h174l-23 28H73l-32-28Z" fill="#102338"/>
+  <path d="M77 194h116c-28 18-73 25-119 12-13-4-25-9-36-16 14 4 27 5 39 4Z" fill="#102338" opacity=".92"/>
+  <path d="M58 216c38-19 80-18 123 1 17 8 34 9 51 4" fill="none" stroke="#146f74" stroke-width="9" stroke-linecap="round"/>
+  <path d="M40 202c37-16 73-15 108 3 20 10 42 13 68 5" fill="none" stroke="#9c7027" stroke-width="6" stroke-linecap="round" opacity=".9"/>
+  <path d="M132 45v122" stroke="#102338" stroke-width="7" stroke-linecap="round"/>
+  <path d="M74 153h15V126H74v27Z" fill="#1b7f83"/>
+  <path d="M95 153h17V104H95v49Z" fill="#1b7f83"/>
+  <path d="M119 153h18V75h-18v78Z" fill="#1b7f83"/>
+  <path d="M148 153h16V83h-16v70Z" fill="#b7791f"/>
+  <path d="M171 153h15v109h-15Z" fill="#b7791f" transform="translate(0 -109)"/>
+  <path d="M195 153h14V123h-14v30Z" fill="#b7791f"/>
+  <path d="M80 109v-18M104 96V72M128 68V46M156 76V54M202 119V96" stroke="#102338" stroke-width="4" stroke-linecap="round"/>
+</svg>

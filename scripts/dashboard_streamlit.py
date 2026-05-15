@@ -1092,6 +1092,29 @@ def render_dashboard_styles() -> None:
         """
         <style>
         .block-container { padding-top: 2rem; }
+        .qod-app-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 6px;
+        }
+        .qod-app-mark {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            box-shadow: 0 10px 26px rgba(23, 32, 42, 0.12);
+        }
+        .qod-app-title {
+            font-size: 34px;
+            line-height: 1.1;
+            font-weight: 760;
+            color: #17202a;
+        }
+        .qod-app-subtitle {
+            color: #596579;
+            font-size: 14px;
+            margin-top: 4px;
+        }
         div[data-testid="stMetric"] {
             background: #ffffff;
             border: 1px solid #e3e6ec;
@@ -1110,8 +1133,20 @@ def render_dashboard_styles() -> None:
 def main() -> None:
     st.set_page_config(page_title="Quant Odyssey", layout="wide")
     render_dashboard_styles()
-    st.title("Quant Odyssey Personal Dashboard")
-    st.caption("[公开主页](/) · 左侧导航，中间策略判断，右侧系统行为，下方随时提问。")
+    st.markdown(
+        """
+        <div class="qod-app-header">
+          <img class="qod-app-mark" src="/assets/quantodyssey-mark.svg" alt="" />
+          <div>
+            <div class="qod-app-title">Quant Odyssey Personal Dashboard</div>
+            <div class="qod-app-subtitle">
+              <a href="/" target="_self">公开主页</a> · 左侧导航，中间策略判断，右侧系统行为，下方随时提问。
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     engine, database_url = connect_database()
     st.caption(f"Database: `{database_url}`")

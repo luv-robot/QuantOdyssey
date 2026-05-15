@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Quant Odyssey</title>
+  <link rel="icon" href="/assets/quantodyssey-mark.svg" type="image/svg+xml" />
   <style>
     :root {
       color-scheme: light;
@@ -38,7 +39,20 @@
       top: 0;
       z-index: 10;
     }
-    .brand { font-weight: 760; letter-spacing: 0; font-size: 18px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 760;
+      letter-spacing: 0;
+      font-size: 18px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      box-shadow: 0 6px 18px rgba(23, 32, 42, 0.1);
+    }
     .nav { display: flex; align-items: center; gap: 22px; color: var(--muted); font-size: 14px; }
     .login {
       color: #fff;
@@ -186,18 +200,7 @@
       display: grid;
       place-items: center;
     }
-    .proof-mark div {
-      width: min(280px, 70%);
-      aspect-ratio: 1;
-      border: 12px solid var(--ink);
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-weight: 820;
-      font-size: 58px;
-      color: var(--teal);
-      background: #f7f7f4;
-    }
+    .proof-logo { width: min(280px, 72%); filter: drop-shadow(0 16px 32px rgba(23, 32, 42, .14)); }
     footer {
       padding: 34px 5vw;
       color: var(--muted);
@@ -215,7 +218,10 @@
 </head>
 <body>
   <header>
-    <a class="brand" href="/">Quant Odyssey</a>
+    <a class="brand" href="/">
+      <img class="brand-mark" src="/assets/quantodyssey-mark.svg" alt="" />
+      <span>Quant Odyssey</span>
+    </a>
     <nav class="nav">
       <a href="#regime">Regime Atlas</a>
       <a href="#researchers">Research Network</a>
@@ -282,7 +288,7 @@
         但不要求公开核心逻辑。未来通过零知识证明让用户证明“我确实跑过某种评测”，而不是交出 alpha。
       </p>
       <div class="proof-grid">
-        <div class="proof-mark"><div>ZK</div></div>
+        <div class="proof-mark"><img class="proof-logo" src="/assets/quantodyssey-mark.svg" alt="Quant Odyssey mark" /></div>
         <div class="proof">
           <h3>Proof-first, alpha-private</h3>
           <p>公开：策略类型、自我描述、客观结果、评测证明。</p>
