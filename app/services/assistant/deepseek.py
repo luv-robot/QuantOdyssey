@@ -27,7 +27,7 @@ class DeepSeekChatClient:
         timeout_seconds: int = 30,
     ) -> None:
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        self.model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4")
+        self.model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
         self.base_url = (base_url or os.getenv("DEEPSEEK_API_BASE") or "https://api.deepseek.com").rstrip("/")
         self.timeout_seconds = timeout_seconds
 
@@ -64,7 +64,12 @@ class DeepSeekChatClient:
                 raw = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            return ChatCompletionResult(content="", raw={"status": exc.code, "body": body}, error=f"HTTP {exc.code}")
+            short_body = body[:500]
+            return ChatCompletionResult(
+                content="",
+                raw={"status": exc.code, "body": short_body},
+                error=f"HTTP {exc.code}: {short_body}",
+            )
         except (URLError, TimeoutError, json.JSONDecodeError) as exc:
             return ChatCompletionResult(content="", raw={}, error=str(exc))
 

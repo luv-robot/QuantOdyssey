@@ -20,7 +20,7 @@ DEEPSEEK_API_KEY=
 Optional:
 
 ```bash
-DEEPSEEK_MODEL=deepseek-v4
+DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_API_BASE=https://api.deepseek.com
 ```
 

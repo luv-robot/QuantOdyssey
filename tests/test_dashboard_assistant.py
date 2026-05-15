@@ -5,7 +5,7 @@ from app.storage import QuantRepository
 
 class FakeConfiguredClient:
     provider = "deepseek"
-    model = "deepseek-v4"
+    model = "deepseek-v4-pro"
 
     def is_configured(self) -> bool:
         return True
@@ -21,7 +21,7 @@ class FakeConfiguredClient:
 
 class FakeMissingClient:
     provider = "deepseek"
-    model = "deepseek-v4"
+    model = "deepseek-v4-pro"
 
     def is_configured(self) -> bool:
         return False

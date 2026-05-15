@@ -61,7 +61,7 @@ def build_dashboard_assistant_answer(
 ) -> DashboardAssistantResult:
     client = client or DeepSeekChatClient()
     provider = getattr(client, "provider", "deepseek")
-    model = getattr(client, "model", "deepseek-v4")
+    model = getattr(client, "model", "deepseek-v4-pro")
     prompt_id = f"prompt_dashboard_assistant_{uuid4().hex[:8]}"
     response_id = f"response_dashboard_assistant_{uuid4().hex[:8]}"
     prompt_text = _prompt_text(question, context)

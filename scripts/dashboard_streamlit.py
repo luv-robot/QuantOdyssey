@@ -692,7 +692,7 @@ def render_global_ai_assistant(engine, database_url: str) -> None:
         <div class="qod-assistant-dock">
           <span class="qod-assistant-plus">+</span>
           <span class="qod-assistant-label">Quant Odyssey Assistant</span>
-          <span class="qod-assistant-pill">DeepSeek V4</span>
+          <span class="qod-assistant-pill">DeepSeek V4 Pro</span>
           <span class="qod-assistant-hint">已有数据会优先引导到内部页面</span>
         </div>
         """,
