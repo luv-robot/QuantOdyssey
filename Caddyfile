@@ -28,6 +28,10 @@ quantodyssey.com {
 		respond "missing or invalid webhook secret" 401
 	}
 
+	handle /app/favicon.png {
+		redir /assets/quantodyssey-mark.svg 308
+	}
+
 	handle /app* {
 		import /etc/caddy/auth.caddy
 		reverse_proxy app:8501
