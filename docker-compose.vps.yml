@@ -123,6 +123,41 @@ services:
       orderflow-collector:
         condition: service_started
 
+  harness-runner-scheduler:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: python scripts/prefect_harness_runner_flow.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      POSTGRES_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      QDRANT_URL: http://qdrant:6333
+      PREFECT_API_URL: http://prefect:4200/api
+      ORDERFLOW_SYMBOLS: "${ORDERFLOW_SYMBOLS:-BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT}"
+      HARNESS_RUNNER_CRON: "${HARNESS_RUNNER_CRON:-45 */2 * * *}"
+      HARNESS_RUNNER_SYMBOLS: "${HARNESS_RUNNER_SYMBOLS:-BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT}"
+      HARNESS_RUNNER_TIMEFRAMES: "${HARNESS_RUNNER_TIMEFRAMES:-5m,15m,1h}"
+      HARNESS_RUNNER_DATA_DIR: "${HARNESS_RUNNER_DATA_DIR:-freqtrade_user_data/data/binance/futures}"
+      HARNESS_RUNNER_SCRATCHPAD_DIR: "${HARNESS_RUNNER_SCRATCHPAD_DIR:-/app/logs/harness_scratchpad}"
+      HARNESS_RUNNER_MAX_TASKS: "${HARNESS_RUNNER_MAX_TASKS:-4}"
+      HARNESS_RUNNER_MAX_QUEUE_SCAN: "${HARNESS_RUNNER_MAX_QUEUE_SCAN:-30}"
+      HARNESS_RUNNER_MAX_CANDLES: "${HARNESS_RUNNER_MAX_CANDLES:-5000}"
+      HARNESS_RUNNER_MAX_TRIALS: "${HARNESS_RUNNER_MAX_TRIALS:-40}"
+      HARNESS_RUNNER_MIN_TRADE_COUNT: "${HARNESS_RUNNER_MIN_TRADE_COUNT:-10}"
+      HARNESS_RUNNER_MONTE_CARLO_SIMULATIONS: "${HARNESS_RUNNER_MONTE_CARLO_SIMULATIONS:-80}"
+      HARNESS_RUNNER_MONTE_CARLO_HORIZON_TRADES: "${HARNESS_RUNNER_MONTE_CARLO_HORIZON_TRADES:-20}"
+      HARNESS_RUNNER_WALK_FORWARD_MIN_TRADES_PER_WINDOW: "${HARNESS_RUNNER_WALK_FORWARD_MIN_TRADES_PER_WINDOW:-10}"
+    volumes:
+      - ./configs:/app/configs:ro
+      - freqtrade_data:/app/freqtrade_user_data/data
+      - app_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect:
+        condition: service_started
+
   postgres:
     image: postgres:16
     restart: unless-stopped
