@@ -1108,9 +1108,11 @@ def _render_baseline_direction_snapshot(board: dict | None) -> None:
                 "baseline": row.get("display_name") or row.get("strategy_family"),
                 "group": row.get("benchmark_group", "-"),
                 "direction": row.get("direction_bias", "-"),
+                "basis": row.get("return_basis", "-"),
                 "return": _fmt_pct(row.get("total_return")),
                 "pf": _fmt_num(row.get("profit_factor")),
                 "trades": row.get("trades", "-"),
+                "periods": row.get("portfolio_period_count", "-"),
             }
         )
     st.dataframe(table_rows, use_container_width=True, hide_index=True)

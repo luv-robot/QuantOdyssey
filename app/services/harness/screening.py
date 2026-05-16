@@ -350,11 +350,13 @@ def _cash_row() -> StrategyFamilyBaselineRow:
         description="No-position cash baseline.",
         direction_bias="flat",
         benchmark_group="passive",
+        return_basis="cash_no_trade",
         total_return=0,
         profit_factor=1,
         sharpe=None,
         max_drawdown=0,
         trades=0,
+        portfolio_period_count=0,
         positive_cell_count=0,
         tested_cell_count=0,
     )
@@ -394,11 +396,13 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
         description=description,
         direction_bias="long_only",
         benchmark_group="passive",
+        return_basis="single_symbol_passive_hold",
         total_return=round(total_return, 6),
         profit_factor=1.0 if total_return > 0 else 0,
         sharpe=None,
         max_drawdown=round(min(drawdowns or [0]), 6),
         trades=len(returns),
+        portfolio_period_count=max((len(candles) for candles in btc_cells.values()), default=0),
         positive_cell_count=sum(1 for item in returns if item > 0),
         tested_cell_count=len(returns),
     )
@@ -481,8 +485,9 @@ def _cross_sectional_momentum_row(
     lookback: int = 48,
     horizon: int = 12,
 ) -> StrategyFamilyBaselineRow:
-    returns: list[float] = []
+    returns_by_timeframe: list[list[float]] = []
     for _, group in _cells_by_timeframe(candles_by_cell).items():
+        timeframe_returns: list[float] = []
         sorted_group = [(symbol, sorted(candles, key=lambda item: item.open_time)) for symbol, candles in group]
         if not sorted_group:
             continue
@@ -516,27 +521,28 @@ def _cross_sectional_momentum_row(
                 else:
                     short_return = 0
                 if side == "long_short":
-                    returns.append((long_return + short_return) / 2)
+                    timeframe_returns.append((long_return + short_return) / 2)
                 elif side == "short":
-                    returns.append(short_return)
+                    timeframe_returns.append(short_return)
                 else:
-                    returns.append(long_return)
+                    timeframe_returns.append(long_return)
                 index += horizon
             else:
                 index += 1
+        returns_by_timeframe.append(timeframe_returns)
     names = _directional_baseline_names(
         "cross_sectional_momentum",
         "Cross-Sectional Momentum",
         side,
     )
-    return _row_from_returns(
+    return _row_from_trade_returns(
         names["strategy_family"],
         names["display_name"],
         (
             "Cross-sectional momentum baseline: long strongest recent asset, short weakest recent asset, "
             "or long-short spread by direction."
         ),
-        returns,
+        returns_by_timeframe,
         direction_bias=names["direction_bias"],
         benchmark_group="momentum",
     )
@@ -748,20 +754,64 @@ def _row_from_returns(
     direction_bias: str,
     benchmark_group: str,
 ) -> StrategyFamilyBaselineRow:
-    usable = [item for item in returns if item != 0]
+    return _row_from_trade_returns(
+        strategy_family,
+        display_name,
+        description,
+        [returns],
+        direction_bias=direction_bias,
+        benchmark_group=benchmark_group,
+    )
+
+
+def _portfolio_period_returns(returns_by_cell: list[list[float]]) -> list[float]:
+    max_length = max((len(returns) for returns in returns_by_cell), default=0)
+    portfolio_returns: list[float] = []
+    for index in range(max_length):
+        active_returns = [returns[index] for returns in returns_by_cell if index < len(returns)]
+        if active_returns:
+            portfolio_returns.append(mean(active_returns))
+    return portfolio_returns
+
+
+def _cell_compound_returns(returns_by_cell: list[list[float]]) -> list[float]:
+    return [compound_return(returns) for returns in returns_by_cell if returns]
+
+
+def _trade_returns(returns_by_cell: list[list[float]]) -> list[float]:
+    return [item for returns in returns_by_cell for item in returns if item != 0]
+
+
+def _row_from_portfolio_returns(
+    strategy_family: str,
+    display_name: str,
+    description: str,
+    portfolio_returns: list[float],
+    *,
+    direction_bias: str,
+    benchmark_group: str,
+    return_basis: str,
+    trades: int,
+    cell_returns: list[float],
+    metric_returns: list[float] | None = None,
+    max_drawdown_override: float | None = None,
+) -> StrategyFamilyBaselineRow:
+    usable = [item for item in (metric_returns if metric_returns is not None else portfolio_returns) if item != 0]
     return StrategyFamilyBaselineRow(
         strategy_family=strategy_family,
         display_name=display_name,
         description=description,
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
-        total_return=round(compound_return(returns), 6),
+        return_basis=return_basis,
+        total_return=round(compound_return(portfolio_returns), 6),
         profit_factor=round(profit_factor(usable), 6),
         sharpe=sharpe_ratio(usable),
-        max_drawdown=round(max_drawdown(usable), 6),
-        trades=len(usable),
-        positive_cell_count=sum(1 for item in returns if item > 0),
-        tested_cell_count=len(returns),
+        max_drawdown=round(max_drawdown_override if max_drawdown_override is not None else max_drawdown(portfolio_returns), 6),
+        trades=trades,
+        portfolio_period_count=len(portfolio_returns),
+        positive_cell_count=sum(1 for item in cell_returns if item > 0),
+        tested_cell_count=len(cell_returns),
     )
 
 
@@ -775,21 +825,19 @@ def _row_from_cell_returns(
     cell_returns: list[float],
     max_drawdown: float,
 ) -> StrategyFamilyBaselineRow:
-    usable = [item for item in cell_returns if item != 0]
-    total_return = mean(cell_returns) if cell_returns else 0
-    return StrategyFamilyBaselineRow(
+    portfolio_returns = [mean(cell_returns)] if cell_returns else []
+    return _row_from_portfolio_returns(
         strategy_family=strategy_family,
         display_name=display_name,
         description=description,
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
-        total_return=round(total_return, 6),
-        profit_factor=round(profit_factor(usable), 6),
-        sharpe=sharpe_ratio(usable),
-        max_drawdown=round(min(max_drawdown, 0), 6),
-        trades=len(usable),
-        positive_cell_count=sum(1 for item in cell_returns if item > 0),
-        tested_cell_count=len(cell_returns),
+        return_basis="equal_weight_passive_cell_return",
+        trades=len([item for item in cell_returns if item != 0]),
+        portfolio_returns=portfolio_returns if cell_returns else [],
+        cell_returns=cell_returns,
+        metric_returns=cell_returns,
+        max_drawdown_override=min(max_drawdown, 0),
     )
 
 
@@ -802,23 +850,19 @@ def _row_from_trade_returns(
     direction_bias: str,
     benchmark_group: str,
 ) -> StrategyFamilyBaselineRow:
-    trade_returns = [item for returns in returns_by_cell for item in returns if item != 0]
-    cell_returns = [compound_return(returns) for returns in returns_by_cell]
-    total_return = mean(cell_returns) if cell_returns else 0
-    drawdowns = [max_drawdown(returns) for returns in returns_by_cell if returns]
-    return StrategyFamilyBaselineRow(
+    trade_returns = _trade_returns(returns_by_cell)
+    cell_returns = _cell_compound_returns(returns_by_cell)
+    portfolio_returns = _portfolio_period_returns(returns_by_cell)
+    return _row_from_portfolio_returns(
         strategy_family=strategy_family,
         display_name=display_name,
         description=description,
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
-        total_return=round(total_return, 6),
-        profit_factor=round(profit_factor(trade_returns), 6),
-        sharpe=sharpe_ratio(trade_returns),
-        max_drawdown=round(min(drawdowns or [0]), 6),
+        return_basis="equal_weight_portfolio_period_returns",
+        portfolio_returns=portfolio_returns,
         trades=len(trade_returns),
-        positive_cell_count=sum(1 for item in cell_returns if item > 0),
-        tested_cell_count=len(cell_returns),
+        cell_returns=cell_returns,
     )
 
 

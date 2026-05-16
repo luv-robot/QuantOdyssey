@@ -77,6 +77,29 @@ def test_active_baseline_metrics_use_trade_level_returns_not_cell_returns() -> N
     assert passive_btc.max_drawdown < 0
 
 
+def test_cross_sectional_momentum_uses_portfolio_curve_not_timeframe_compounding() -> None:
+    one_timeframe = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=400),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=400),
+    }
+    duplicated_timeframes = {
+        **one_timeframe,
+        ("BTC/USDT:USDT", "5m"): _trend_candles("BTC/USDT:USDT", count=400),
+        ("ETH/USDT:USDT", "5m"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=400),
+    }
+
+    single_board = build_strategy_family_baseline_board(one_timeframe)
+    duplicated_board = build_strategy_family_baseline_board(duplicated_timeframes)
+
+    single = next(row for row in single_board.rows if row.strategy_family == "cross_sectional_momentum")
+    duplicated = next(row for row in duplicated_board.rows if row.strategy_family == "cross_sectional_momentum")
+
+    assert duplicated.return_basis == "equal_weight_portfolio_period_returns"
+    assert duplicated.trades == single.trades * 2
+    assert duplicated.portfolio_period_count == single.portfolio_period_count
+    assert duplicated.total_return == single.total_return
+
+
 def test_baseline_board_excludes_failed_breakout_from_generic_baselines() -> None:
     board = build_strategy_family_baseline_board(
         {("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT")},

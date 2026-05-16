@@ -165,11 +165,13 @@ class StrategyFamilyBaselineRow(BaseModel):
     description: str = Field(min_length=1)
     direction_bias: str = Field(default="unknown", min_length=1)
     benchmark_group: str = Field(default="generic", min_length=1)
+    return_basis: str = Field(default="unknown", min_length=1)
     total_return: float
     profit_factor: float = Field(ge=0)
     sharpe: float | None = None
     max_drawdown: float = Field(le=0)
     trades: int = Field(ge=0)
+    portfolio_period_count: int = Field(default=0, ge=0)
     positive_cell_count: int = Field(default=0, ge=0)
     tested_cell_count: int = Field(default=0, ge=0)
 
