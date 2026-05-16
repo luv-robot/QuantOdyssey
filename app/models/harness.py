@@ -161,7 +161,10 @@ class StrategyFamilyBaselineRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy_family: str = Field(min_length=1)
+    display_name: str = Field(default="", min_length=0)
     description: str = Field(min_length=1)
+    direction_bias: str = Field(default="unknown", min_length=1)
+    benchmark_group: str = Field(default="generic", min_length=1)
     total_return: float
     profit_factor: float = Field(ge=0)
     sharpe: float | None = None

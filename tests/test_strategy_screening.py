@@ -20,6 +20,7 @@ from app.services.harness import (
 def test_baseline_board_includes_btc_dca_with_buy_and_hold_group() -> None:
     candles_by_cell = {
         ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT"),
+        ("BTC/USDT:USDT", "5m"): _trend_candles("BTC/USDT:USDT", count=80),
         ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000),
     }
 
@@ -31,10 +32,33 @@ def test_baseline_board_includes_btc_dca_with_buy_and_hold_group() -> None:
     assert "passive_btc_dca" in names
     assert "passive_equal_weight_buy_and_hold" in names
     assert "cross_sectional_momentum" in names
+    assert "cross_sectional_momentum_long_only" in names
+    assert "cross_sectional_momentum_short_only" in names
     assert "time_series_trend" in names
+    assert "time_series_trend_long_only" in names
+    assert "time_series_trend_short_only" in names
     assert "breakout_trend" in names
+    assert "breakout_trend_long_only" in names
+    assert "breakout_trend_short_only" in names
+    assert "range_mean_reversion_long_only" in names
+    assert "range_mean_reversion_short_only" in names
     assert "grid_range" in names
     assert any("DCA BTC" in finding or "DCA" in finding for finding in board.findings)
+    assert any("direction_bias" in finding for finding in board.findings)
+
+    passive_btc = next(row for row in board.rows if row.strategy_family == "passive_btc_buy_and_hold")
+    equal_weight = next(row for row in board.rows if row.strategy_family == "passive_equal_weight_buy_and_hold")
+    trend = next(row for row in board.rows if row.strategy_family == "time_series_trend")
+    trend_short = next(row for row in board.rows if row.strategy_family == "time_series_trend_short_only")
+    grid = next(row for row in board.rows if row.strategy_family == "grid_range")
+
+    assert passive_btc.display_name == "BTC Buy & Hold"
+    assert passive_btc.direction_bias == "long_only"
+    assert passive_btc.tested_cell_count == 1
+    assert equal_weight.tested_cell_count == 2
+    assert trend.direction_bias == "long_short"
+    assert trend_short.direction_bias == "short_only"
+    assert grid.direction_bias == "long_short"
 
 
 def test_active_baseline_metrics_use_trade_level_returns_not_cell_returns() -> None:

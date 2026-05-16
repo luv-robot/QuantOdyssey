@@ -369,6 +369,7 @@ def render_research_workbench(engine, database_url: str) -> None:
                 st.warning(error)
             elif regime:
                 _render_regime_score_bars(regime)
+                _render_baseline_direction_snapshot(board)
             else:
                 st.info("暂无 regime 要素评分。")
 
@@ -1089,6 +1090,30 @@ def _render_regime_score_bars(regime: dict) -> None:
     findings = regime.get("findings") or []
     if findings:
         st.caption(findings[0])
+
+
+def _render_baseline_direction_snapshot(board: dict | None) -> None:
+    if not board or not board.get("rows"):
+        return
+    rows = sorted(
+        board.get("rows") or [],
+        key=lambda item: float(item.get("total_return") or 0),
+        reverse=True,
+    )
+    st.write("**Baseline Direction Check**")
+    table_rows = []
+    for row in rows[:8]:
+        table_rows.append(
+            {
+                "baseline": row.get("display_name") or row.get("strategy_family"),
+                "group": row.get("benchmark_group", "-"),
+                "direction": row.get("direction_bias", "-"),
+                "return": _fmt_pct(row.get("total_return")),
+                "pf": _fmt_num(row.get("profit_factor")),
+                "trades": row.get("trades", "-"),
+            }
+        )
+    st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
 
 def _tasks_for_scope(tasks: list[dict], *, thesis_id: str | None, strategy_id: str | None) -> list[dict]:
