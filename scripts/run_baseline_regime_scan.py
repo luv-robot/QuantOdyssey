@@ -7,7 +7,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
+from app.models import BacktestCostModel  # noqa: E402
+from app.services.backtester import default_backtest_cost_model_from_env  # noqa: E402
+from app.services.harness import (  # noqa: E402
+    build_baseline_implied_regime_report,
+    build_strategy_family_baseline_board,
+    build_strategy_family_baseline_boards_by_timeframe,
+)
 from app.services.market_data import load_freqtrade_ohlcv  # noqa: E402
 
 
@@ -20,21 +26,54 @@ def main() -> int:
     parser.add_argument("--data-dir", default="freqtrade_user_data/data/binance/futures")
     parser.add_argument("--max-candles", type=int, default=20000)
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL", "sqlite+pysqlite:///market_data.sqlite3"))
+    parser.add_argument("--fee-rate", type=float, default=None)
+    parser.add_argument("--slippage-bps", type=float, default=None)
+    parser.add_argument("--spread-bps", type=float, default=None)
+    parser.add_argument("--funding-rate-8h", type=float, default=None)
+    parser.add_argument("--funding-source", default=None)
+    parser.add_argument("--no-common-window", action="store_true")
     args = parser.parse_args()
 
     candles_by_cell = _load_candles(args)
-    board = build_strategy_family_baseline_board(candles_by_cell)
+    cost_model = _cost_model(args)
+    board = build_strategy_family_baseline_board(
+        candles_by_cell,
+        cost_model=cost_model,
+        align_common_window=not args.no_common_window,
+    )
+    boards_by_timeframe = build_strategy_family_baseline_boards_by_timeframe(candles_by_cell, cost_model=cost_model)
     regime = build_baseline_implied_regime_report(board)
     print(
         json.dumps(
             {
                 "baseline_board": board.model_dump(mode="json"),
+                "baseline_boards_by_timeframe": {
+                    timeframe: scoped_board.model_dump(mode="json")
+                    for timeframe, scoped_board in boards_by_timeframe.items()
+                },
                 "baseline_implied_regime": regime.model_dump(mode="json"),
             },
             indent=2,
         )
     )
     return 0
+
+
+def _cost_model(args: argparse.Namespace) -> BacktestCostModel:
+    base = default_backtest_cost_model_from_env()
+    return base.model_copy(
+        update={
+            key: value
+            for key, value in {
+                "fee_rate": args.fee_rate,
+                "slippage_bps": args.slippage_bps,
+                "spread_bps": args.spread_bps,
+                "funding_rate_8h": args.funding_rate_8h,
+                "funding_source": args.funding_source,
+            }.items()
+            if value is not None
+        }
+    )
 
 
 def _load_candles(args: argparse.Namespace):

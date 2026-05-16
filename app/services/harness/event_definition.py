@@ -95,6 +95,8 @@ def run_funding_crowding_event_definition_sensitivity(
     horizon_hours: int = 4,
     min_trade_count: int = 20,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
     max_trials: int = 200,
 ) -> EventDefinitionSensitivityReport:
     """Run a bounded event-definition grid for the short Funding Crowding Fade thesis."""
@@ -122,12 +124,18 @@ def run_funding_crowding_event_definition_sensitivity(
         data_warnings.append("historical_open_interest_missing_volume_proxy_used")
 
     horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    round_trip_cost = _effective_round_trip_cost(
+        fee_rate=fee_rate,
+        slippage_bps=slippage_bps,
+        funding_rate_8h=funding_rate_8h,
+        holding_hours=horizon_hours,
+    )
     features = _precompute_features(sorted_candles, sorted_funding, sorted_oi, failed_breakout_windows, timeframe)
     funding_only_returns = _simulate_returns(
         sorted_candles,
         features,
         horizon_bars=horizon_bars,
-        fee_rate=fee_rate,
+        fee_rate=round_trip_cost,
         predicate=lambda item: item["funding_percentile"] >= 90 and item["price_change_24h"] > 0,
     )
     funding_only_stats = _stats_from_returns(funding_only_returns)
@@ -159,7 +167,7 @@ def run_funding_crowding_event_definition_sensitivity(
                         sorted_candles,
                         features,
                         horizon_bars=horizon_bars,
-                        fee_rate=fee_rate,
+                        fee_rate=round_trip_cost,
                         predicate=predicate,
                     )
                     stats = _stats_from_returns(returns)
@@ -311,6 +319,8 @@ def run_failed_breakout_event_definition_sensitivity(
     horizon_hours: int = 2,
     min_trade_count: int = 50,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
     max_trials: int = 200,
 ) -> FailedBreakoutSensitivityReport:
     """Run a bounded OHLCV-only event-definition grid for Failed Breakout Punishment."""
@@ -330,6 +340,12 @@ def run_failed_breakout_event_definition_sensitivity(
         data_warnings.append("limited_ohlcv_history_for_failed_breakout_scan")
 
     horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    round_trip_cost = _effective_round_trip_cost(
+        fee_rate=fee_rate,
+        slippage_bps=slippage_bps,
+        funding_rate_8h=funding_rate_8h,
+        holding_hours=horizon_hours,
+    )
     baseline_returns = _simulate_failed_breakout_returns(
         sorted_candles,
         sides=normalized_sides,
@@ -341,7 +357,7 @@ def run_failed_breakout_event_definition_sensitivity(
         acceptance_failure_threshold=0,
         volume_zscore_threshold=0,
         horizon_bars=horizon_bars,
-        fee_rate=fee_rate,
+        fee_rate=round_trip_cost,
     )
     baseline_stats = _stats_from_returns(baseline_returns)
 
@@ -391,7 +407,7 @@ def run_failed_breakout_event_definition_sensitivity(
                                         event_scan["events"],
                                         side=side,
                                         horizon_bars=horizon_bars,
-                                        fee_rate=fee_rate,
+                                        fee_rate=round_trip_cost,
                                     )
                                     stats = _stats_from_returns(returns)
                                     trials.append(
@@ -529,10 +545,18 @@ def simulate_failed_breakout_trial_returns(
     trial_id: str,
     horizon_hours: int = 2,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
 ) -> list[float]:
     """Replay one encoded Failed Breakout trial id and return its non-overlapping trade returns."""
     params = parse_failed_breakout_trial_id(trial_id)
     horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    round_trip_cost = _effective_round_trip_cost(
+        fee_rate=fee_rate,
+        slippage_bps=slippage_bps,
+        funding_rate_8h=funding_rate_8h,
+        holding_hours=horizon_hours,
+    )
     return _simulate_failed_breakout_returns(
         sorted(candles, key=lambda item: item.open_time),
         sides=(str(params["side"]),),
@@ -544,7 +568,7 @@ def simulate_failed_breakout_trial_returns(
         acceptance_failure_threshold=float(params["acceptance_failure_threshold"]),
         volume_zscore_threshold=float(params["volume_zscore_threshold"]),
         horizon_bars=horizon_bars,
-        fee_rate=fee_rate,
+        fee_rate=round_trip_cost,
     )
 
 
@@ -555,11 +579,19 @@ def scan_failed_breakout_trial_events(
     trial_id: str,
     horizon_hours: int = 2,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
 ) -> list[dict]:
     """Replay one Failed Breakout trial id and return event metadata plus fixed-horizon return."""
     params = parse_failed_breakout_trial_id(trial_id)
     sorted_candles = sorted(candles, key=lambda item: item.open_time)
     horizon_bars = _bars_for_duration(timeframe, hours=horizon_hours)
+    round_trip_cost = _effective_round_trip_cost(
+        fee_rate=fee_rate,
+        slippage_bps=slippage_bps,
+        funding_rate_8h=funding_rate_8h,
+        holding_hours=horizon_hours,
+    )
     event_scan = _failed_breakout_event_scan(
         sorted_candles,
         side=str(params["side"]),
@@ -582,7 +614,7 @@ def scan_failed_breakout_trial_events(
         if entry <= 0 or exit_ <= 0:
             continue
         side = str(params["side"])
-        trade_return = entry / exit_ - 1 - fee_rate if side == "short" else exit_ / entry - 1 - fee_rate
+        trade_return = entry / exit_ - 1 - round_trip_cost if side == "short" else exit_ / entry - 1 - round_trip_cost
         events.append(
             {
                 **event,
@@ -1328,6 +1360,16 @@ def _latest_percentile(values: list[float], latest: float) -> float:
     if not values:
         return 50.0
     return sum(1 for value in values if value <= latest) / len(values) * 100
+
+
+def _effective_round_trip_cost(
+    *,
+    fee_rate: float,
+    slippage_bps: float,
+    funding_rate_8h: float,
+    holding_hours: float,
+) -> float:
+    return fee_rate + 2 * slippage_bps / 10_000 + abs(funding_rate_8h) * max(holding_hours, 0) / 8
 
 
 def _datetime_seconds(value) -> float:

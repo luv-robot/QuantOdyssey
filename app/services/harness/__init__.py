@@ -36,6 +36,7 @@ from app.services.harness.screening import (
     build_data_sufficiency_gate,
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
+    build_strategy_family_baseline_boards_by_timeframe,
     decide_strategy_screening_action,
 )
 from app.services.harness.validation import (
@@ -67,6 +68,7 @@ __all__ = [
     "build_baseline_implied_regime_report",
     "build_regime_coverage_report",
     "build_strategy_family_baseline_board",
+    "build_strategy_family_baseline_boards_by_timeframe",
     "decide_strategy_screening_action",
     "parse_failed_breakout_trial_id",
     "run_failed_breakout_bootstrap_monte_carlo",

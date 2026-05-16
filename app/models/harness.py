@@ -5,6 +5,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.cost import BacktestCostModel
 from app.models.research import DataSufficiencyLevel
 
 
@@ -167,9 +168,19 @@ class StrategyFamilyBaselineRow(BaseModel):
     benchmark_group: str = Field(default="generic", min_length=1)
     return_basis: str = Field(default="unknown", min_length=1)
     total_return: float
+    gross_return: float = 0
+    net_return: float = 0
+    cost_drag: float = 0
+    fee_drag: float = 0
+    slippage_drag: float = 0
+    funding_drag: float = 0
     profit_factor: float = Field(ge=0)
+    gross_profit_factor: float = Field(default=0, ge=0)
+    net_profit_factor: float = Field(default=0, ge=0)
     sharpe: float | None = None
     max_drawdown: float = Field(le=0)
+    gross_max_drawdown: float = Field(default=0, le=0)
+    net_max_drawdown: float = Field(default=0, le=0)
     trades: int = Field(ge=0)
     portfolio_period_count: int = Field(default=0, ge=0)
     positive_cell_count: int = Field(default=0, ge=0)
@@ -182,6 +193,11 @@ class StrategyFamilyBaselineBoard(BaseModel):
     board_id: str = Field(min_length=1)
     symbols: list[str] = Field(default_factory=list)
     timeframes: list[str] = Field(default_factory=list)
+    timeframe_scope: str = Field(default="all_common_window", min_length=1)
+    common_start_at: datetime | None = None
+    common_end_at: datetime | None = None
+    is_common_window_aligned: bool = False
+    cost_model: BacktestCostModel = Field(default_factory=BacktestCostModel)
     rows: list[StrategyFamilyBaselineRow] = Field(default_factory=list)
     best_family: str | None = None
     findings: list[str] = Field(default_factory=list)

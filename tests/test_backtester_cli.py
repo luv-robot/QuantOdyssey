@@ -76,6 +76,16 @@ def test_build_backtest_command_accepts_pair_override() -> None:
     ]
 
 
+def test_build_backtest_command_accepts_effective_fee_override() -> None:
+    command = build_backtest_command(
+        strategy_name="ExampleStrategy",
+        timerange="20240101-20260501",
+        fee_rate=0.0007,
+    )
+
+    assert command[command.index("--fee") + 1] == "0.0007000000"
+
+
 def test_load_freqtrade_trading_mode_defaults_to_spot_for_missing_file(tmp_path) -> None:
     assert load_freqtrade_trading_mode(tmp_path / "missing.json") == "missing"
 

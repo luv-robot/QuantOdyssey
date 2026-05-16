@@ -13,6 +13,7 @@ from app.models.backtest import (
 from app.models.arena import ArenaScoreComponent, ArenaScoreReport
 from app.models.backtest_validation import BacktestValidationReport
 from app.models.baseline import BaselineComparisonReport, BaselineResult
+from app.models.cost import BacktestCostModel
 from app.models.experiment import ExperimentManifest
 from app.models.experiment_queue import ExperimentQueueItem, ExperimentQueueStatus
 from app.models.factor_catalog import (
@@ -172,6 +173,7 @@ __all__ = [
     "AgentEvalCaseResult",
     "AgentEvalRun",
     "AgentEvalTarget",
+    "BacktestCostModel",
     "BacktestReport",
     "BacktestStatus",
     "AggregateTrade",

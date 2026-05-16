@@ -1101,6 +1101,15 @@ def _render_baseline_direction_snapshot(board: dict | None) -> None:
         reverse=True,
     )
     st.write("**Baseline Direction Check**")
+    cost_model = board.get("cost_model") or {}
+    if cost_model:
+        st.caption(
+            "Cost model: "
+            f"fee={_fmt_pct(cost_model.get('fee_rate'))}, "
+            f"slippage={_fmt_num(cost_model.get('slippage_bps'))} bps, "
+            f"spread={_fmt_num(cost_model.get('spread_bps'))} bps, "
+            f"funding_8h={_fmt_pct(cost_model.get('funding_rate_8h'))}."
+        )
     table_rows = []
     for row in rows[:8]:
         table_rows.append(
@@ -1108,8 +1117,10 @@ def _render_baseline_direction_snapshot(board: dict | None) -> None:
                 "baseline": row.get("display_name") or row.get("strategy_family"),
                 "group": row.get("benchmark_group", "-"),
                 "direction": row.get("direction_bias", "-"),
-                "basis": row.get("return_basis", "-"),
-                "return": _fmt_pct(row.get("total_return")),
+                "window": board.get("timeframe_scope", "-"),
+                "net": _fmt_pct(row.get("total_return")),
+                "gross": _fmt_pct(row.get("gross_return")),
+                "cost": _fmt_pct(row.get("cost_drag")),
                 "pf": _fmt_num(row.get("profit_factor")),
                 "trades": row.get("trades", "-"),
                 "periods": row.get("portfolio_period_count", "-"),

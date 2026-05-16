@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from app.models import BacktestReport, BacktestStatus, StrategyManifest, TradeRecord
+from app.models import BacktestCostModel, BacktestReport, BacktestStatus, StrategyManifest, TradeRecord
+from app.services.backtester.costs import cost_model_metadata, default_backtest_cost_model_from_env, effective_freqtrade_fee_rate
 from app.services.reviewer import parse_freqtrade_trades
 
 
@@ -42,6 +43,7 @@ def build_backtest_command(
     export_filename: Path | None = None,
     backtest_directory: Path | None = None,
     pairs: list[str] | None = None,
+    fee_rate: float | None = None,
 ) -> list[str]:
     command = [
         "freqtrade",
@@ -59,6 +61,8 @@ def build_backtest_command(
     ]
     if pairs:
         command.extend(["--pairs", *pairs])
+    if fee_rate is not None:
+        command.extend(["--fee", f"{fee_rate:.10f}"])
     if backtest_directory is not None:
         command.extend(["--backtest-directory", str(backtest_directory)])
     elif export_filename is not None:
@@ -110,7 +114,9 @@ def run_freqtrade_backtest(
     timeout_seconds: int = 600,
     pairs: list[str] | None = None,
     backtest_id_suffix: str | None = None,
+    cost_model: BacktestCostModel | None = None,
 ) -> tuple[BacktestReport, list[TradeRecord], dict[str, Any]]:
+    resolved_cost_model = cost_model or default_backtest_cost_model_from_env()
     strategy_file = Path(manifest.file_path)
     if not strategy_file.is_absolute():
         strategy_file = Path.cwd() / strategy_file
@@ -156,6 +162,7 @@ def run_freqtrade_backtest(
                 "config_path": str(selected_config_path),
                 "preflight": preflight,
                 "trading_mode": trading_mode,
+                **cost_model_metadata(resolved_cost_model),
             },
         )
     command = build_backtest_command(
@@ -165,6 +172,7 @@ def run_freqtrade_backtest(
         userdir=userdir,
         backtest_directory=export_dir,
         pairs=command_pairs,
+        fee_rate=effective_freqtrade_fee_rate(resolved_cost_model),
     )
     completed = run_freqtrade_command(command, timeout_seconds=timeout_seconds)
     metadata = {
@@ -176,6 +184,7 @@ def run_freqtrade_backtest(
         "config_path": str(selected_config_path),
         "preflight": preflight,
         "trading_mode": trading_mode,
+        **cost_model_metadata(resolved_cost_model),
     }
     if completed.returncode != 0:
         return (

@@ -32,6 +32,8 @@ def run_failed_breakout_walk_forward_validation(
     min_pass_rate: float = 0.5,
     horizon_hours: int = 2,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
 ) -> StrategyFamilyWalkForwardReport:
     """Replay each best Failed Breakout cell across contiguous time folds."""
     windows: list[StrategyFamilyWalkForwardWindow] = []
@@ -62,6 +64,8 @@ def run_failed_breakout_walk_forward_validation(
                 trial_id=cell.best_trial_id,
                 horizon_hours=horizon_hours,
                 fee_rate=fee_rate,
+                slippage_bps=slippage_bps,
+                funding_rate_8h=funding_rate_8h,
             )
             baseline_returns = simulate_failed_breakout_trial_returns(
                 fold_candles,
@@ -69,6 +73,8 @@ def run_failed_breakout_walk_forward_validation(
                 trial_id=baseline_trial_id,
                 horizon_hours=horizon_hours,
                 fee_rate=fee_rate,
+                slippage_bps=slippage_bps,
+                funding_rate_8h=funding_rate_8h,
             )
             stats = _return_stats(returns)
             baseline_stats = _return_stats(baseline_returns)
@@ -162,6 +168,8 @@ def run_failed_breakout_bootstrap_monte_carlo(
     max_drawdown_floor: float = -0.25,
     horizon_hours: int = 2,
     fee_rate: float = 0.001,
+    slippage_bps: float = 2.0,
+    funding_rate_8h: float = 0.0,
 ) -> StrategyFamilyMonteCarloReport:
     """Bootstrap best Failed Breakout cell returns to estimate path risk."""
     trade_returns: list[float] = []
@@ -181,6 +189,8 @@ def run_failed_breakout_bootstrap_monte_carlo(
             trial_id=cell.best_trial_id,
             horizon_hours=horizon_hours,
             fee_rate=fee_rate,
+            slippage_bps=slippage_bps,
+            funding_rate_8h=funding_rate_8h,
         )
         trade_returns.extend(returns)
         trial_ids.append(cell.best_trial_id)

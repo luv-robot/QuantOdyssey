@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import timezone
 from statistics import mean, pstdev
 from uuid import uuid4
 
 from app.models import (
+    BacktestCostModel,
     BaselineImpliedRegimeReport,
     DataSufficiencyGateReport,
     DataSufficiencyLevel,
@@ -20,6 +22,7 @@ from app.models import (
     StrategyScreeningAction,
     StrategyScreeningDecision,
 )
+from app.services.backtester.costs import default_backtest_cost_model_from_env, round_trip_execution_cost
 from app.services.metrics import (
     compound_return,
     max_drawdown,
@@ -102,25 +105,35 @@ def build_strategy_family_baseline_board(
     candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
     *,
     failed_breakout_report: FailedBreakoutUniverseReport | None = None,
+    cost_model: BacktestCostModel | None = None,
+    align_common_window: bool = True,
+    timeframe_scope: str = "all_common_window",
 ) -> StrategyFamilyBaselineBoard:
+    resolved_cost_model = cost_model or default_backtest_cost_model_from_env()
+    common_start, common_end = _common_window(candles_by_cell) if align_common_window else (None, None)
+    baseline_cells = (
+        _restrict_to_window(candles_by_cell, common_start, common_end)
+        if align_common_window and common_start is not None and common_end is not None
+        else candles_by_cell
+    )
     rows = [
-        _cash_row(),
-        _passive_btc_row(candles_by_cell, mode="buy_and_hold"),
-        _passive_btc_row(candles_by_cell, mode="dca"),
-        _equal_weight_hold_row(candles_by_cell),
-        _cross_sectional_momentum_row(candles_by_cell, side="long"),
-        _cross_sectional_momentum_row(candles_by_cell, side="short"),
-        _cross_sectional_momentum_row(candles_by_cell, side="long_short"),
-        _time_series_trend_row(candles_by_cell, side="long"),
-        _time_series_trend_row(candles_by_cell, side="short"),
-        _time_series_trend_row(candles_by_cell, side="long_short"),
-        _breakout_trend_row(candles_by_cell, side="long"),
-        _breakout_trend_row(candles_by_cell, side="short"),
-        _breakout_trend_row(candles_by_cell, side="long_short"),
-        _mean_reversion_row(candles_by_cell, side="long"),
-        _mean_reversion_row(candles_by_cell, side="short"),
-        _mean_reversion_row(candles_by_cell, side="long_short"),
-        _grid_range_row(candles_by_cell),
+        _cash_row(resolved_cost_model),
+        _passive_btc_row(baseline_cells, mode="buy_and_hold", cost_model=resolved_cost_model),
+        _passive_btc_row(baseline_cells, mode="dca", cost_model=resolved_cost_model),
+        _equal_weight_hold_row(baseline_cells, cost_model=resolved_cost_model),
+        _cross_sectional_momentum_row(baseline_cells, side="long", cost_model=resolved_cost_model),
+        _cross_sectional_momentum_row(baseline_cells, side="short", cost_model=resolved_cost_model),
+        _cross_sectional_momentum_row(baseline_cells, side="long_short", cost_model=resolved_cost_model),
+        _time_series_trend_row(baseline_cells, side="long", cost_model=resolved_cost_model),
+        _time_series_trend_row(baseline_cells, side="short", cost_model=resolved_cost_model),
+        _time_series_trend_row(baseline_cells, side="long_short", cost_model=resolved_cost_model),
+        _breakout_trend_row(baseline_cells, side="long", cost_model=resolved_cost_model),
+        _breakout_trend_row(baseline_cells, side="short", cost_model=resolved_cost_model),
+        _breakout_trend_row(baseline_cells, side="long_short", cost_model=resolved_cost_model),
+        _mean_reversion_row(baseline_cells, side="long", cost_model=resolved_cost_model),
+        _mean_reversion_row(baseline_cells, side="short", cost_model=resolved_cost_model),
+        _mean_reversion_row(baseline_cells, side="long_short", cost_model=resolved_cost_model),
+        _grid_range_row(baseline_cells, cost_model=resolved_cost_model),
     ]
 
     best = max(rows, key=lambda item: (item.total_return, item.profit_factor), default=None)
@@ -128,7 +141,13 @@ def build_strategy_family_baseline_board(
         "Baseline board covers passive exposure, long/short momentum, trend following, and range/grid proxies.",
         "Passive BTC exposure baselines include standardized BTC buy-and-hold and DCA BTC.",
         "Directional baselines expose direction_bias so long-only weakness is visible instead of hidden.",
+        (
+            "Baseline rows report gross and net returns; total_return/profit_factor/max_drawdown use net "
+            "returns after default fee, slippage/spread, and funding assumptions."
+        ),
     ]
+    if align_common_window and common_start is not None and common_end is not None:
+        findings.append(f"Baseline cells are aligned to common window {common_start.isoformat()} - {common_end.isoformat()}.")
     if best is not None:
         findings.append(f"Best baseline family is {best.strategy_family} with return {best.total_return:.4f}.")
     if failed_breakout_report is not None:
@@ -138,10 +157,32 @@ def build_strategy_family_baseline_board(
         board_id=f"strategy_family_baseline_board_{uuid4().hex[:8]}",
         symbols=sorted({symbol for symbol, _ in candles_by_cell}),
         timeframes=sorted({timeframe for _, timeframe in candles_by_cell}),
+        timeframe_scope=timeframe_scope,
+        common_start_at=common_start,
+        common_end_at=common_end,
+        is_common_window_aligned=align_common_window and common_start is not None and common_end is not None,
+        cost_model=resolved_cost_model,
         rows=rows,
         best_family=None if best is None else best.strategy_family,
         findings=findings,
     )
+
+
+def build_strategy_family_baseline_boards_by_timeframe(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    cost_model: BacktestCostModel | None = None,
+) -> dict[str, StrategyFamilyBaselineBoard]:
+    boards: dict[str, StrategyFamilyBaselineBoard] = {}
+    for timeframe in sorted({timeframe for _, timeframe in candles_by_cell}):
+        scoped_cells = {cell: candles for cell, candles in candles_by_cell.items() if cell[1] == timeframe}
+        boards[timeframe] = build_strategy_family_baseline_board(
+            scoped_cells,
+            cost_model=cost_model,
+            align_common_window=True,
+            timeframe_scope=timeframe,
+        )
+    return boards
 
 
 def build_baseline_implied_regime_report(board: StrategyFamilyBaselineBoard) -> BaselineImpliedRegimeReport:
@@ -343,7 +384,52 @@ def _window_volatility(candles: list[OhlcvCandle], index: int, lookback: int) ->
     return pstdev(returns) if len(returns) > 1 else 0
 
 
-def _cash_row() -> StrategyFamilyBaselineRow:
+def _common_window(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+):
+    starts = []
+    ends = []
+    for candles in candles_by_cell.values():
+        sorted_candles = sorted(candles, key=lambda item: item.open_time)
+        if len(sorted_candles) < 2:
+            continue
+        starts.append(sorted_candles[0].open_time)
+        ends.append(sorted_candles[-1].open_time)
+    if not starts or not ends:
+        return None, None
+    common_start = max(starts, key=_datetime_seconds)
+    common_end = min(ends, key=_datetime_seconds)
+    if _datetime_seconds(common_start) >= _datetime_seconds(common_end):
+        return None, None
+    return common_start, common_end
+
+
+def _restrict_to_window(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    start,
+    end,
+) -> dict[tuple[str, str], list[OhlcvCandle]]:
+    start_seconds = _datetime_seconds(start)
+    end_seconds = _datetime_seconds(end)
+    restricted: dict[tuple[str, str], list[OhlcvCandle]] = {}
+    for cell, candles in candles_by_cell.items():
+        filtered = [
+            candle
+            for candle in sorted(candles, key=lambda item: item.open_time)
+            if start_seconds <= _datetime_seconds(candle.open_time) <= end_seconds
+        ]
+        if len(filtered) >= 2:
+            restricted[cell] = filtered
+    return restricted
+
+
+def _datetime_seconds(value) -> float:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
+
+
+def _cash_row(cost_model: BacktestCostModel) -> StrategyFamilyBaselineRow:
     return StrategyFamilyBaselineRow(
         strategy_family="cash_no_trade",
         display_name="Cash / No Trade",
@@ -352,9 +438,19 @@ def _cash_row() -> StrategyFamilyBaselineRow:
         benchmark_group="passive",
         return_basis="cash_no_trade",
         total_return=0,
+        gross_return=0,
+        net_return=0,
+        cost_drag=0,
+        fee_drag=0,
+        slippage_drag=0,
+        funding_drag=0,
         profit_factor=1,
+        gross_profit_factor=1,
+        net_profit_factor=1,
         sharpe=None,
         max_drawdown=0,
+        gross_max_drawdown=0,
+        net_max_drawdown=0,
         trades=0,
         portfolio_period_count=0,
         positive_cell_count=0,
@@ -362,7 +458,12 @@ def _cash_row() -> StrategyFamilyBaselineRow:
     )
 
 
-def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], *, mode: str) -> StrategyFamilyBaselineRow:
+def _passive_btc_row(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    mode: str,
+    cost_model: BacktestCostModel,
+) -> StrategyFamilyBaselineRow:
     btc_cells = _best_hold_cells_by_symbol(
         {
             cell: candles
@@ -370,19 +471,26 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
             if cell[0].upper().startswith("BTC/")
         }
     )
-    returns: list[float] = []
+    gross_returns: list[float] = []
+    net_returns: list[float] = []
     drawdowns: list[float] = []
     for candles in btc_cells.values():
         sorted_candles = sorted(candles, key=lambda item: item.open_time)
         if len(sorted_candles) < 2:
             continue
         if mode == "dca":
-            returns.append(_dca_return(sorted_candles))
+            gross_return = _dca_return(sorted_candles)
             drawdowns.append(_dca_max_drawdown(sorted_candles))
         else:
-            returns.append(sorted_candles[-1].close / sorted_candles[0].close - 1)
+            gross_return = sorted_candles[-1].close / sorted_candles[0].close - 1
             drawdowns.append(_hold_max_drawdown(sorted_candles))
-    total_return = mean(returns) if returns else 0
+        gross_returns.append(gross_return)
+        holding_hours = _calendar_span_seconds(sorted_candles) / 3600
+        net_returns.append(gross_return - round_trip_execution_cost(cost_model, holding_hours=holding_hours))
+    gross_return = mean(gross_returns) if gross_returns else 0
+    net_return = mean(net_returns) if net_returns else 0
+    cost_drag = gross_return - net_return
+    fee_drag, slippage_drag, funding_drag = _allocate_cost_drag(cost_model, cost_drag, _average_holding_hours(btc_cells.values()))
     name = "passive_btc_dca" if mode == "dca" else "passive_btc_buy_and_hold"
     display_name = "BTC DCA" if mode == "dca" else "BTC Buy & Hold"
     description = (
@@ -397,18 +505,32 @@ def _passive_btc_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]], 
         direction_bias="long_only",
         benchmark_group="passive",
         return_basis="single_symbol_passive_hold",
-        total_return=round(total_return, 6),
-        profit_factor=1.0 if total_return > 0 else 0,
+        total_return=round(net_return, 6),
+        gross_return=round(gross_return, 6),
+        net_return=round(net_return, 6),
+        cost_drag=round(cost_drag, 6),
+        fee_drag=round(fee_drag, 6),
+        slippage_drag=round(slippage_drag, 6),
+        funding_drag=round(funding_drag, 6),
+        profit_factor=1.0 if net_return > 0 else 0,
+        gross_profit_factor=1.0 if gross_return > 0 else 0,
+        net_profit_factor=1.0 if net_return > 0 else 0,
         sharpe=None,
         max_drawdown=round(min(drawdowns or [0]), 6),
-        trades=len(returns),
+        gross_max_drawdown=round(min(drawdowns or [0]), 6),
+        net_max_drawdown=round(min(drawdowns or [0]), 6),
+        trades=len(gross_returns),
         portfolio_period_count=max((len(candles) for candles in btc_cells.values()), default=0),
-        positive_cell_count=sum(1 for item in returns if item > 0),
-        tested_cell_count=len(returns),
+        positive_cell_count=sum(1 for item in net_returns if item > 0),
+        tested_cell_count=len(gross_returns),
     )
 
 
-def _equal_weight_hold_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
+def _equal_weight_hold_row(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    cost_model: BacktestCostModel,
+) -> StrategyFamilyBaselineRow:
     returns: list[float] = []
     drawdowns: list[float] = []
     for candles in _best_hold_cells_by_symbol(candles_by_cell).values():
@@ -424,6 +546,8 @@ def _equal_weight_hold_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCand
         benchmark_group="passive",
         cell_returns=returns,
         max_drawdown=min(drawdowns or [0]),
+        cost_model=cost_model,
+        holding_hours=_average_holding_hours(_best_hold_cells_by_symbol(candles_by_cell).values()),
     )
 
 
@@ -482,11 +606,13 @@ def _cross_sectional_momentum_row(
     candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
     *,
     side: str,
+    cost_model: BacktestCostModel,
     lookback: int = 48,
     horizon: int = 12,
 ) -> StrategyFamilyBaselineRow:
     returns_by_timeframe: list[list[float]] = []
-    for _, group in _cells_by_timeframe(candles_by_cell).items():
+    holding_hours_by_timeframe: list[float] = []
+    for timeframe, group in _cells_by_timeframe(candles_by_cell).items():
         timeframe_returns: list[float] = []
         sorted_group = [(symbol, sorted(candles, key=lambda item: item.open_time)) for symbol, candles in group]
         if not sorted_group:
@@ -530,6 +656,7 @@ def _cross_sectional_momentum_row(
             else:
                 index += 1
         returns_by_timeframe.append(timeframe_returns)
+        holding_hours_by_timeframe.append(horizon * _timeframe_hours(timeframe))
     names = _directional_baseline_names(
         "cross_sectional_momentum",
         "Cross-Sectional Momentum",
@@ -545,6 +672,8 @@ def _cross_sectional_momentum_row(
         returns_by_timeframe,
         direction_bias=names["direction_bias"],
         benchmark_group="momentum",
+        cost_model=cost_model,
+        holding_hours_by_cell=holding_hours_by_timeframe,
     )
 
 
@@ -552,11 +681,15 @@ def _time_series_trend_row(
     candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
     *,
     side: str,
+    cost_model: BacktestCostModel,
 ) -> StrategyFamilyBaselineRow:
+    lookback = 96
+    horizon = 24
     returns_by_cell = [
-        _directional_fixed_horizon_returns(candles, side=side, mode="trend", lookback=96, horizon=24)
+        _directional_fixed_horizon_returns(candles, side=side, mode="trend", lookback=lookback, horizon=horizon)
         for candles in candles_by_cell.values()
     ]
+    holding_hours_by_cell = [horizon * _timeframe_hours(timeframe) for _, timeframe in candles_by_cell]
     names = _directional_baseline_names("time_series_trend", "Time-Series Trend", side)
     return _row_from_trade_returns(
         names["strategy_family"],
@@ -565,6 +698,8 @@ def _time_series_trend_row(
         returns_by_cell,
         direction_bias=names["direction_bias"],
         benchmark_group="trend",
+        cost_model=cost_model,
+        holding_hours_by_cell=holding_hours_by_cell,
     )
 
 
@@ -572,6 +707,7 @@ def _breakout_trend_row(
     candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
     *,
     side: str,
+    cost_model: BacktestCostModel,
     lookback: int = 96,
     horizon: int = 24,
 ) -> StrategyFamilyBaselineRow:
@@ -579,6 +715,7 @@ def _breakout_trend_row(
         _donchian_breakout_returns(candles, side=side, lookback=lookback, horizon=horizon)
         for candles in candles_by_cell.values()
     ]
+    holding_hours_by_cell = [horizon * _timeframe_hours(timeframe) for _, timeframe in candles_by_cell]
     names = _directional_baseline_names("breakout_trend", "Breakout Trend", side)
     return _row_from_trade_returns(
         names["strategy_family"],
@@ -587,6 +724,8 @@ def _breakout_trend_row(
         returns_by_cell,
         direction_bias=names["direction_bias"],
         benchmark_group="trend",
+        cost_model=cost_model,
+        holding_hours_by_cell=holding_hours_by_cell,
     )
 
 
@@ -594,11 +733,14 @@ def _mean_reversion_row(
     candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
     *,
     side: str,
+    cost_model: BacktestCostModel,
 ) -> StrategyFamilyBaselineRow:
+    horizon = 12
     returns_by_cell = [
-        _directional_fixed_horizon_returns(candles, side=side, mode="mean_reversion")
+        _directional_fixed_horizon_returns(candles, side=side, mode="mean_reversion", horizon=horizon)
         for candles in candles_by_cell.values()
     ]
+    holding_hours_by_cell = [horizon * _timeframe_hours(timeframe) for _, timeframe in candles_by_cell]
     names = _directional_baseline_names("range_mean_reversion", "Range Mean Reversion", side)
     return _row_from_trade_returns(
         names["strategy_family"],
@@ -607,11 +749,19 @@ def _mean_reversion_row(
         returns_by_cell,
         direction_bias=names["direction_bias"],
         benchmark_group="range",
+        cost_model=cost_model,
+        holding_hours_by_cell=holding_hours_by_cell,
     )
 
 
-def _grid_range_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -> StrategyFamilyBaselineRow:
-    returns_by_cell = [_grid_proxy_returns(candles) for candles in candles_by_cell.values()]
+def _grid_range_row(
+    candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]],
+    *,
+    cost_model: BacktestCostModel,
+) -> StrategyFamilyBaselineRow:
+    horizon = 6
+    returns_by_cell = [_grid_proxy_returns(candles, horizon=horizon) for candles in candles_by_cell.values()]
+    holding_hours_by_cell = [horizon * _timeframe_hours(timeframe) for _, timeframe in candles_by_cell]
     return _row_from_trade_returns(
         "grid_range",
         "Grid / Range Proxy",
@@ -619,6 +769,8 @@ def _grid_range_row(candles_by_cell: dict[tuple[str, str], list[OhlcvCandle]]) -
         returns_by_cell,
         direction_bias="long_short",
         benchmark_group="range",
+        cost_model=cost_model,
+        holding_hours_by_cell=holding_hours_by_cell,
     )
 
 
@@ -753,6 +905,7 @@ def _row_from_returns(
     *,
     direction_bias: str,
     benchmark_group: str,
+    cost_model: BacktestCostModel,
 ) -> StrategyFamilyBaselineRow:
     return _row_from_trade_returns(
         strategy_family,
@@ -761,6 +914,7 @@ def _row_from_returns(
         [returns],
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
+        cost_model=cost_model,
     )
 
 
@@ -782,6 +936,84 @@ def _trade_returns(returns_by_cell: list[list[float]]) -> list[float]:
     return [item for returns in returns_by_cell for item in returns if item != 0]
 
 
+def _normalized_holding_hours(
+    returns_by_cell: list[list[float]],
+    holding_hours_by_cell: list[float] | None,
+) -> list[float]:
+    if holding_hours_by_cell is None:
+        return [0.0 for _ in returns_by_cell]
+    normalized = list(holding_hours_by_cell[: len(returns_by_cell)])
+    while len(normalized) < len(returns_by_cell):
+        normalized.append(0.0)
+    return normalized
+
+
+def _apply_costs_to_return_streams(
+    returns_by_cell: list[list[float]],
+    cost_model: BacktestCostModel,
+    holding_hours_by_cell: list[float],
+) -> list[list[float]]:
+    adjusted: list[list[float]] = []
+    for returns, holding_hours in zip(returns_by_cell, holding_hours_by_cell):
+        cost = round_trip_execution_cost(cost_model, holding_hours=holding_hours)
+        adjusted.append([item - cost if item != 0 else 0 for item in returns])
+    return adjusted
+
+
+def _average_holding_hours(candle_groups) -> float:
+    values = []
+    for candles in candle_groups:
+        sorted_candles = sorted(candles, key=lambda item: item.open_time)
+        if len(sorted_candles) >= 2:
+            values.append(_calendar_span_seconds(sorted_candles) / 3600)
+    return mean(values) if values else 0
+
+
+def _allocate_weighted_cost_drag(
+    cost_model: BacktestCostModel,
+    cost_drag: float,
+    returns_by_cell: list[list[float]],
+    holding_hours_by_cell: list[float],
+) -> tuple[float, float, float]:
+    fee_weight = 0.0
+    slippage_weight = 0.0
+    funding_weight = 0.0
+    for returns, holding_hours in zip(returns_by_cell, holding_hours_by_cell):
+        trade_count = len([item for item in returns if item != 0])
+        fee_weight += trade_count * 2 * cost_model.fee_rate
+        slippage_weight += trade_count * 2 * (cost_model.slippage_bps + cost_model.spread_bps) / 10_000
+        funding_weight += trade_count * abs(cost_model.funding_rate_8h) * max(holding_hours, 0.0) / 8
+    total = fee_weight + slippage_weight + funding_weight
+    if total <= 0 or cost_drag <= 0:
+        return 0.0, 0.0, 0.0
+    return (
+        cost_drag * fee_weight / total,
+        cost_drag * slippage_weight / total,
+        cost_drag * funding_weight / total,
+    )
+
+
+def _allocate_cost_drag(
+    cost_model: BacktestCostModel,
+    cost_drag: float,
+    holding_hours: float,
+) -> tuple[float, float, float]:
+    return _allocate_weighted_cost_drag(cost_model, cost_drag, [[1.0]], [holding_hours])
+
+
+def _timeframe_hours(timeframe: str) -> float:
+    value = timeframe.strip().lower()
+    if value.endswith("m"):
+        return float(value[:-1]) / 60
+    if value.endswith("h"):
+        return float(value[:-1])
+    if value.endswith("d"):
+        return float(value[:-1]) * 24
+    if value.endswith("w"):
+        return float(value[:-1]) * 24 * 7
+    return 0.0
+
+
 def _row_from_portfolio_returns(
     strategy_family: str,
     display_name: str,
@@ -793,10 +1025,28 @@ def _row_from_portfolio_returns(
     return_basis: str,
     trades: int,
     cell_returns: list[float],
+    gross_portfolio_returns: list[float] | None = None,
+    gross_cell_returns: list[float] | None = None,
     metric_returns: list[float] | None = None,
+    gross_metric_returns: list[float] | None = None,
     max_drawdown_override: float | None = None,
+    gross_max_drawdown_override: float | None = None,
+    fee_drag: float = 0,
+    slippage_drag: float = 0,
+    funding_drag: float = 0,
 ) -> StrategyFamilyBaselineRow:
     usable = [item for item in (metric_returns if metric_returns is not None else portfolio_returns) if item != 0]
+    gross_portfolio = gross_portfolio_returns if gross_portfolio_returns is not None else portfolio_returns
+    gross_usable = [item for item in (gross_metric_returns if gross_metric_returns is not None else gross_portfolio) if item != 0]
+    gross_cells = gross_cell_returns if gross_cell_returns is not None else cell_returns
+    net_total = compound_return(portfolio_returns)
+    gross_total = compound_return(gross_portfolio)
+    net_drawdown = max_drawdown_override if max_drawdown_override is not None else max_drawdown(portfolio_returns)
+    gross_drawdown = (
+        gross_max_drawdown_override
+        if gross_max_drawdown_override is not None
+        else max_drawdown(gross_portfolio)
+    )
     return StrategyFamilyBaselineRow(
         strategy_family=strategy_family,
         display_name=display_name,
@@ -804,14 +1054,24 @@ def _row_from_portfolio_returns(
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
         return_basis=return_basis,
-        total_return=round(compound_return(portfolio_returns), 6),
+        total_return=round(net_total, 6),
+        gross_return=round(gross_total, 6),
+        net_return=round(net_total, 6),
+        cost_drag=round(gross_total - net_total, 6),
+        fee_drag=round(fee_drag, 6),
+        slippage_drag=round(slippage_drag, 6),
+        funding_drag=round(funding_drag, 6),
         profit_factor=round(profit_factor(usable), 6),
+        gross_profit_factor=round(profit_factor(gross_usable), 6),
+        net_profit_factor=round(profit_factor(usable), 6),
         sharpe=sharpe_ratio(usable),
-        max_drawdown=round(max_drawdown_override if max_drawdown_override is not None else max_drawdown(portfolio_returns), 6),
+        max_drawdown=round(net_drawdown, 6),
+        gross_max_drawdown=round(gross_drawdown, 6),
+        net_max_drawdown=round(net_drawdown, 6),
         trades=trades,
         portfolio_period_count=len(portfolio_returns),
         positive_cell_count=sum(1 for item in cell_returns if item > 0),
-        tested_cell_count=len(cell_returns),
+        tested_cell_count=len(gross_cells),
     )
 
 
@@ -824,8 +1084,15 @@ def _row_from_cell_returns(
     benchmark_group: str,
     cell_returns: list[float],
     max_drawdown: float,
+    cost_model: BacktestCostModel,
+    holding_hours: float = 0,
 ) -> StrategyFamilyBaselineRow:
-    portfolio_returns = [mean(cell_returns)] if cell_returns else []
+    gross_portfolio_returns = [mean(cell_returns)] if cell_returns else []
+    cost_per_trade = round_trip_execution_cost(cost_model, holding_hours=holding_hours)
+    net_cell_returns = [item - cost_per_trade for item in cell_returns]
+    portfolio_returns = [mean(net_cell_returns)] if net_cell_returns else []
+    cost_drag = (mean(cell_returns) - mean(net_cell_returns)) if cell_returns and net_cell_returns else 0
+    fee_drag, slippage_drag, funding_drag = _allocate_cost_drag(cost_model, cost_drag, holding_hours)
     return _row_from_portfolio_returns(
         strategy_family=strategy_family,
         display_name=display_name,
@@ -833,11 +1100,18 @@ def _row_from_cell_returns(
         direction_bias=direction_bias,
         benchmark_group=benchmark_group,
         return_basis="equal_weight_passive_cell_return",
-        trades=len([item for item in cell_returns if item != 0]),
+        trades=len([item for item in net_cell_returns if item != 0]),
         portfolio_returns=portfolio_returns if cell_returns else [],
-        cell_returns=cell_returns,
-        metric_returns=cell_returns,
+        gross_portfolio_returns=gross_portfolio_returns if cell_returns else [],
+        cell_returns=net_cell_returns,
+        gross_cell_returns=cell_returns,
+        metric_returns=net_cell_returns,
+        gross_metric_returns=cell_returns,
         max_drawdown_override=min(max_drawdown, 0),
+        gross_max_drawdown_override=min(max_drawdown, 0),
+        fee_drag=fee_drag,
+        slippage_drag=slippage_drag,
+        funding_drag=funding_drag,
     )
 
 
@@ -849,10 +1123,24 @@ def _row_from_trade_returns(
     *,
     direction_bias: str,
     benchmark_group: str,
+    cost_model: BacktestCostModel,
+    holding_hours_by_cell: list[float] | None = None,
 ) -> StrategyFamilyBaselineRow:
-    trade_returns = _trade_returns(returns_by_cell)
-    cell_returns = _cell_compound_returns(returns_by_cell)
-    portfolio_returns = _portfolio_period_returns(returns_by_cell)
+    holding_hours = _normalized_holding_hours(returns_by_cell, holding_hours_by_cell)
+    net_returns_by_cell = _apply_costs_to_return_streams(returns_by_cell, cost_model, holding_hours)
+    trade_returns = _trade_returns(net_returns_by_cell)
+    cell_returns = _cell_compound_returns(net_returns_by_cell)
+    portfolio_returns = _portfolio_period_returns(net_returns_by_cell)
+    gross_trade_returns = _trade_returns(returns_by_cell)
+    gross_cell_returns = _cell_compound_returns(returns_by_cell)
+    gross_portfolio_returns = _portfolio_period_returns(returns_by_cell)
+    cost_drag = compound_return(gross_portfolio_returns) - compound_return(portfolio_returns)
+    fee_drag, slippage_drag, funding_drag = _allocate_weighted_cost_drag(
+        cost_model,
+        cost_drag,
+        returns_by_cell,
+        holding_hours,
+    )
     return _row_from_portfolio_returns(
         strategy_family=strategy_family,
         display_name=display_name,
@@ -861,8 +1149,15 @@ def _row_from_trade_returns(
         benchmark_group=benchmark_group,
         return_basis="equal_weight_portfolio_period_returns",
         portfolio_returns=portfolio_returns,
+        gross_portfolio_returns=gross_portfolio_returns,
         trades=len(trade_returns),
         cell_returns=cell_returns,
+        gross_cell_returns=gross_cell_returns,
+        metric_returns=trade_returns,
+        gross_metric_returns=gross_trade_returns,
+        fee_drag=fee_drag,
+        slippage_drag=slippage_drag,
+        funding_drag=funding_drag,
     )
 
 

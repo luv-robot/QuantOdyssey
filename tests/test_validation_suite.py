@@ -17,7 +17,7 @@ def test_cross_symbol_validation_classifies_primary_related_and_stress(monkeypat
         status=BacktestStatus.PASSED,
     )
 
-    def fake_run(manifest, timerange, config_path, userdir, timeout_seconds, pairs, backtest_id_suffix):
+    def fake_run(manifest, timerange, config_path, userdir, timeout_seconds, pairs, backtest_id_suffix, **kwargs):
         symbol = pairs[0]
         status = BacktestStatus.PASSED if symbol != "DOGE/USDT" else BacktestStatus.FAILED
         return (

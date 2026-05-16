@@ -54,6 +54,10 @@ def run_harness_queue() -> None:
         os.getenv("HARNESS_RUNNER_WALK_FORWARD_HORIZON_HOURS", "2"),
         "--walk-forward-fee-rate",
         os.getenv("HARNESS_RUNNER_WALK_FORWARD_FEE_RATE", "0.001"),
+        "--walk-forward-slippage-bps",
+        os.getenv("HARNESS_RUNNER_WALK_FORWARD_SLIPPAGE_BPS", "2.0"),
+        "--walk-forward-funding-rate-8h",
+        os.getenv("HARNESS_RUNNER_WALK_FORWARD_FUNDING_RATE_8H", "0.0"),
     ]
     if _truthy(os.getenv("HARNESS_RUNNER_SEED_MAINTENANCE_TASKS", "true")):
         command.append("--seed-maintenance-tasks")

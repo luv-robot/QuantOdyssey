@@ -77,6 +77,8 @@ class HarnessRunnerConfig:
     walk_forward_min_pass_rate: float = 0.5
     walk_forward_horizon_hours: int = 2
     walk_forward_fee_rate: float = 0.001
+    walk_forward_slippage_bps: float = 2.0
+    walk_forward_funding_rate_8h: float = 0.0
     scratchpad_base_dir: Path = Path(".qo") / "scratchpad"
 
 
@@ -421,6 +423,9 @@ def _run_failed_breakout_scan(
                 volume_zscore_thresholds=(0, 1.5),
                 max_trials=config.max_trials,
                 min_trade_count=max(10, config.min_trade_count),
+                fee_rate=config.walk_forward_fee_rate,
+                slippage_bps=config.walk_forward_slippage_bps,
+                funding_rate_8h=config.walk_forward_funding_rate_8h,
             )
             reports.append(report)
             repository.save_failed_breakout_sensitivity_report(report)
@@ -490,6 +495,9 @@ def _run_funding_crowding_scan(
                 timeframe=timeframe,
                 max_trials=config.max_trials,
                 min_trade_count=max(10, config.min_trade_count),
+                fee_rate=config.walk_forward_fee_rate,
+                slippage_bps=config.walk_forward_slippage_bps,
+                funding_rate_8h=config.walk_forward_funding_rate_8h,
             )
             reports.append(report)
             repository.save_event_definition_sensitivity_report(report)
@@ -671,6 +679,8 @@ def _execute_failed_breakout_walk_forward(
         min_pass_rate=config.walk_forward_min_pass_rate,
         horizon_hours=config.walk_forward_horizon_hours,
         fee_rate=config.walk_forward_fee_rate,
+        slippage_bps=config.walk_forward_slippage_bps,
+        funding_rate_8h=config.walk_forward_funding_rate_8h,
     )
     repository.save_strategy_family_walk_forward_report(report)
     append_scratchpad_event(
@@ -741,6 +751,10 @@ def _execute_failed_breakout_monte_carlo(
         expensive_simulation_threshold=config.monte_carlo_expensive_threshold,
         approved_to_run=config.approve_expensive_monte_carlo,
         min_sampled_trades=max(10, config.min_trade_count),
+        horizon_hours=config.walk_forward_horizon_hours,
+        fee_rate=config.walk_forward_fee_rate,
+        slippage_bps=config.walk_forward_slippage_bps,
+        funding_rate_8h=config.walk_forward_funding_rate_8h,
     )
     repository.save_strategy_family_monte_carlo_report(report)
     append_scratchpad_event(

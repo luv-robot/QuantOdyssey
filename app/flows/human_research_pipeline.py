@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from app.models import (
+    BacktestCostModel,
     BacktestReport,
     BacktestStatus,
     BacktestValidationReport,
@@ -41,6 +42,8 @@ from app.models import (
 from app.services.backtester import (
     compare_to_event_level_baselines,
     compare_to_proxy_baselines,
+    cost_model_metadata,
+    default_backtest_cost_model_from_env,
     evaluate_robustness,
     run_mock_backtest,
     run_monte_carlo_backtest,
@@ -140,10 +143,12 @@ def run_human_research_pipeline(
     monte_carlo_config: MonteCarloBacktestConfig | None = None,
     approve_expensive_monte_carlo: bool = False,
     backtest_mode: str | None = None,
+    cost_model: BacktestCostModel | None = None,
     strategy_dir: Path = Path("freqtrade_user_data/strategies"),
     review_store: InMemoryReviewStore | None = None,
 ) -> HumanResearchPipelineResult:
     data_contract = build_thesis_data_contract(thesis, signal)
+    resolved_cost_model = cost_model or default_backtest_cost_model_from_env()
     if not data_contract.can_run:
         source_signal = signal
         signal = build_thesis_seed_signal(thesis, source_signal=source_signal)
@@ -258,7 +263,12 @@ def run_human_research_pipeline(
 
         workflow = workflow.transition(WorkflowState.BACKTEST_RUNNING)
         repository.save_workflow_run(workflow)
-        backtest, trades, backtest_metadata = _run_backtest(signal, manifest, mode=backtest_mode)
+        backtest, trades, backtest_metadata = _run_backtest(
+            signal,
+            manifest,
+            mode=backtest_mode,
+            cost_model=resolved_cost_model,
+        )
         repository.save_backtest(backtest)
         for trade in trades:
             repository.save_trade(trade)
@@ -291,6 +301,7 @@ def run_human_research_pipeline(
                 manifest=manifest,
                 source_backtest=backtest,
                 primary_symbol=signal.symbol,
+                cost_model=resolved_cost_model,
             )
             repository.save_real_backtest_validation_suite(real_validation_suite)
             repository.save_cross_symbol_validation(cross_symbol_validation)
@@ -551,6 +562,7 @@ def _run_backtest(
     signal: MarketSignal,
     manifest: StrategyManifest,
     mode: str | None,
+    cost_model: BacktestCostModel,
 ) -> tuple[BacktestReport, list, dict]:
     selected_mode = (mode or os.getenv("QUANTODYSSEY_BACKTEST_MODE", "real")).lower()
     config_path = Path(os.getenv("FREQTRADE_CONFIG", "configs/freqtrade_config.json"))
@@ -562,6 +574,7 @@ def _run_backtest(
                 "backtest_mode": "mock",
                 "config_path": str(config_path),
                 "command": ["mock_backtest"],
+                **cost_model_metadata(cost_model),
             },
         )
     if selected_mode != "real":
@@ -575,6 +588,7 @@ def _run_backtest(
         ),
         userdir=Path(os.getenv("FREQTRADE_USER_DATA", "freqtrade_user_data")),
         timeout_seconds=int(os.getenv("FREQTRADE_BACKTEST_TIMEOUT", "600")),
+        cost_model=cost_model,
     )
     metadata["backtest_mode"] = "real"
     metadata["config_path"] = metadata.get("config_path") or str(config_path)

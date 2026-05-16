@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from app.models import (
+    BacktestCostModel,
     BacktestReport,
     BacktestStatus,
     CrossSymbolValidationReport,
@@ -11,6 +12,7 @@ from app.models import (
     StrategyManifest,
     SymbolValidationResult,
 )
+from app.services.backtester.costs import default_backtest_cost_model_from_env
 from app.services.backtester.freqtrade_cli import run_freqtrade_backtest
 
 
@@ -30,6 +32,7 @@ def run_real_validation_suite(
     config_path: Path | None = None,
     userdir: Path | None = None,
     timeout_seconds: int | None = None,
+    cost_model: BacktestCostModel | None = None,
 ) -> tuple[
     RealBacktestValidationSuiteReport,
     BacktestReport | None,
@@ -40,6 +43,7 @@ def run_real_validation_suite(
     config_path = config_path or Path(os.getenv("FREQTRADE_CONFIG", "configs/freqtrade_config.json"))
     userdir = userdir or Path(os.getenv("FREQTRADE_USER_DATA", "freqtrade_user_data"))
     timeout_seconds = timeout_seconds or int(os.getenv("FREQTRADE_BACKTEST_TIMEOUT", "600"))
+    resolved_cost_model = cost_model or default_backtest_cost_model_from_env()
     related_symbols = related_symbols or _symbols_from_env("FREQTRADE_RELATED_PAIRS", DEFAULT_RELATED_SYMBOLS)
     stress_symbols = stress_symbols or _symbols_from_env("FREQTRADE_STRESS_PAIRS", DEFAULT_STRESS_SYMBOLS)
     walk_forward_ranges = walk_forward_ranges or _symbols_from_env(
@@ -60,6 +64,7 @@ def run_real_validation_suite(
         config_path=config_path,
         userdir=userdir,
         timeout_seconds=timeout_seconds,
+        cost_model=resolved_cost_model,
     )
     walk_forward = [
         _run_window(
@@ -70,6 +75,7 @@ def run_real_validation_suite(
             config_path=config_path,
             userdir=userdir,
             timeout_seconds=timeout_seconds,
+            cost_model=resolved_cost_model,
         )
         for index, timerange in enumerate(walk_forward_ranges, start=1)
     ]
@@ -81,6 +87,7 @@ def run_real_validation_suite(
         config_path=config_path,
         userdir=userdir,
         timeout_seconds=timeout_seconds,
+        cost_model=resolved_cost_model,
     )
     cross_symbol = run_cross_symbol_validation(
         manifest=manifest,
@@ -91,6 +98,7 @@ def run_real_validation_suite(
         config_path=config_path,
         userdir=userdir,
         timeout_seconds=timeout_seconds,
+        cost_model=resolved_cost_model,
     )
 
     if out_of_sample.status != BacktestStatus.PASSED:
@@ -127,7 +135,9 @@ def run_cross_symbol_validation(
     config_path: Path,
     userdir: Path,
     timeout_seconds: int,
+    cost_model: BacktestCostModel | None = None,
 ) -> CrossSymbolValidationReport:
+    resolved_cost_model = cost_model or default_backtest_cost_model_from_env()
     symbols = list(dict.fromkeys([primary_symbol, *related_symbols, *stress_symbols]))
     results = []
     for symbol in symbols:
@@ -139,6 +149,7 @@ def run_cross_symbol_validation(
             config_path=config_path,
             userdir=userdir,
             timeout_seconds=timeout_seconds,
+            cost_model=resolved_cost_model,
         )
         results.append(_symbol_result(symbol, report, primary_symbol, related_symbols))
 
@@ -177,6 +188,7 @@ def _run_window(
     config_path: Path,
     userdir: Path,
     timeout_seconds: int,
+    cost_model: BacktestCostModel | None = None,
 ) -> BacktestReport:
     report, _, _ = run_freqtrade_backtest(
         manifest,
@@ -186,6 +198,7 @@ def _run_window(
         timeout_seconds=timeout_seconds,
         pairs=[pair],
         backtest_id_suffix=suffix,
+        cost_model=cost_model or default_backtest_cost_model_from_env(),
     )
     return report
 

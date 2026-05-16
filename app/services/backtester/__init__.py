@@ -1,4 +1,10 @@
 from app.services.backtester.baselines import compare_to_event_level_baselines, compare_to_proxy_baselines
+from app.services.backtester.costs import (
+    cost_model_metadata,
+    default_backtest_cost_model_from_env,
+    effective_freqtrade_fee_rate,
+    round_trip_execution_cost,
+)
 from app.services.backtester.freqtrade_cli import (
     build_backtest_command,
     build_backtest_preflight,
@@ -27,6 +33,9 @@ __all__ = [
     "build_backtest_preflight",
     "compare_to_proxy_baselines",
     "compare_to_event_level_baselines",
+    "cost_model_metadata",
+    "default_backtest_cost_model_from_env",
+    "effective_freqtrade_fee_rate",
     "extract_freqtrade_trades",
     "find_latest_backtest_result",
     "load_freqtrade_trading_mode",
@@ -43,5 +52,6 @@ __all__ = [
     "run_mock_backtest",
     "run_cross_symbol_validation",
     "run_real_validation_suite",
+    "round_trip_execution_cost",
     "validate_backtest_reliability",
 ]

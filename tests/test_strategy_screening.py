@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from app.models import (
+    BacktestCostModel,
     DataSufficiencyLevel,
     FailedBreakoutUniverseCell,
     FailedBreakoutUniverseReport,
@@ -13,6 +14,7 @@ from app.services.harness import (
     build_data_sufficiency_gate,
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
+    build_strategy_family_baseline_boards_by_timeframe,
     decide_strategy_screening_action,
 )
 
@@ -98,6 +100,56 @@ def test_cross_sectional_momentum_uses_portfolio_curve_not_timeframe_compounding
     assert duplicated.trades == single.trades * 2
     assert duplicated.portfolio_period_count == single.portfolio_period_count
     assert duplicated.total_return == single.total_return
+
+
+def test_baseline_board_aligns_mixed_timeframes_to_common_window() -> None:
+    candles_by_cell = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=300),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=300),
+        ("BTC/USDT:USDT", "1d"): _trend_candles("BTC/USDT:USDT", count=40, interval_hours=24),
+        ("ETH/USDT:USDT", "1d"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=40, interval_hours=24),
+    }
+
+    board = build_strategy_family_baseline_board(candles_by_cell)
+
+    assert board.is_common_window_aligned is True
+    assert board.common_start_at == datetime(2024, 1, 1)
+    assert board.common_end_at == datetime(2024, 1, 13, 11)
+    assert board.timeframe_scope == "all_common_window"
+
+
+def test_baseline_boards_by_timeframe_separate_reporting_scope() -> None:
+    candles_by_cell = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=260),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=260),
+        ("BTC/USDT:USDT", "1d"): _trend_candles("BTC/USDT:USDT", count=260, interval_hours=24),
+    }
+
+    boards = build_strategy_family_baseline_boards_by_timeframe(candles_by_cell)
+
+    assert set(boards) == {"1d", "1h"}
+    assert boards["1h"].timeframe_scope == "1h"
+    assert boards["1d"].timeframe_scope == "1d"
+    assert boards["1h"].timeframes == ["1h"]
+    assert boards["1d"].timeframes == ["1d"]
+
+
+def test_baseline_rows_report_gross_net_and_cost_drag() -> None:
+    cost_model = BacktestCostModel(fee_rate=0.001, slippage_bps=5)
+    candles_by_cell = {
+        ("BTC/USDT:USDT", "1h"): _trend_candles("BTC/USDT:USDT", count=400),
+        ("ETH/USDT:USDT", "1h"): _trend_candles("ETH/USDT:USDT", start_price=1000, count=400),
+    }
+
+    board = build_strategy_family_baseline_board(candles_by_cell, cost_model=cost_model)
+    trend = next(row for row in board.rows if row.strategy_family == "time_series_trend")
+
+    assert board.cost_model.fee_rate == 0.001
+    assert trend.gross_return > trend.net_return
+    assert trend.total_return == trend.net_return
+    assert trend.cost_drag > 0
+    assert trend.fee_drag > 0
+    assert trend.slippage_drag > 0
 
 
 def test_baseline_board_excludes_failed_breakout_from_generic_baselines() -> None:
@@ -229,19 +281,20 @@ def _trend_candles(
     *,
     start_price: float = 100,
     count: int = 180,
+    interval_hours: int = 1,
 ) -> list[OhlcvCandle]:
     start = datetime(2024, 1, 1)
     candles: list[OhlcvCandle] = []
     price = start_price
     for index in range(count):
         price *= 1.001 if index < count // 2 else 0.9995
-        open_time = start + timedelta(hours=index)
+        open_time = start + timedelta(hours=index * interval_hours)
         candles.append(
             OhlcvCandle(
                 symbol=symbol,
                 interval="1h",
                 open_time=open_time,
-                close_time=open_time + timedelta(hours=1),
+                close_time=open_time + timedelta(hours=interval_hours),
                 open=price * 0.999,
                 high=price * 1.003,
                 low=price * 0.997,
