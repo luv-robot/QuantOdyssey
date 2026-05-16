@@ -148,6 +148,7 @@ services:
       HARNESS_RUNNER_MONTE_CARLO_SIMULATIONS: "${HARNESS_RUNNER_MONTE_CARLO_SIMULATIONS:-80}"
       HARNESS_RUNNER_MONTE_CARLO_HORIZON_TRADES: "${HARNESS_RUNNER_MONTE_CARLO_HORIZON_TRADES:-20}"
       HARNESS_RUNNER_WALK_FORWARD_MIN_TRADES_PER_WINDOW: "${HARNESS_RUNNER_WALK_FORWARD_MIN_TRADES_PER_WINDOW:-10}"
+      HARNESS_RUNNER_SEED_MAINTENANCE_TASKS: "${HARNESS_RUNNER_SEED_MAINTENANCE_TASKS:-true}"
     volumes:
       - ./configs:/app/configs:ro
       - freqtrade_data:/app/freqtrade_user_data/data
@@ -156,6 +157,45 @@ services:
       postgres:
         condition: service_healthy
       prefect:
+        condition: service_started
+
+  supervisor-monitor-scheduler:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: python scripts/prefect_supervisor_monitor_flow.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      POSTGRES_URL: postgresql+psycopg://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/quant_odyssey
+      QDRANT_URL: http://qdrant:6333
+      PREFECT_API_URL: http://prefect:4200/api
+      N8N_URL: http://n8n:5678
+      N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:-}"
+      ORDERFLOW_SYMBOLS: "${ORDERFLOW_SYMBOLS:-BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT}"
+      ORDERFLOW_BAR_INTERVAL: "${ORDERFLOW_BAR_INTERVAL:-1m}"
+      ORDERFLOW_TRADING_MODE: "${ORDERFLOW_TRADING_MODE:-futures}"
+      ORDERFLOW_MAX_STALENESS_SECONDS: "${ORDERFLOW_MAX_STALENESS_SECONDS:-600}"
+      ORDERFLOW_STATE_PATH: "${ORDERFLOW_STATE_PATH:-/app/logs/orderflow_collector_state.json}"
+      HEALTH_DISK_PATH: "${HEALTH_DISK_PATH:-/app}"
+      DISK_WARN_PERCENT: "${DISK_WARN_PERCENT:-85}"
+      SUPERVISOR_MONITOR_CRON: "${SUPERVISOR_MONITOR_CRON:-*/15 * * * *}"
+      SUPERVISOR_ALERT_WEBHOOK_URL: "${SUPERVISOR_ALERT_WEBHOOK_URL:-http://n8n:5678/webhook/supervisor-system-alert}"
+      SUPERVISOR_DEV_AGENT_WEBHOOK_URL: "${SUPERVISOR_DEV_AGENT_WEBHOOK_URL:-}"
+      SUPERVISOR_ALERT_EMAIL_TO: "${SUPERVISOR_ALERT_EMAIL_TO:-luweiword@gmail.com}"
+      SUPERVISOR_DEV_AGENT_CHANNEL: "${SUPERVISOR_DEV_AGENT_CHANNEL:-dashboard_supervisor_inbox}"
+      SUPERVISOR_ALERT_STATE_PATH: "${SUPERVISOR_ALERT_STATE_PATH:-/app/logs/supervisor_alert_state.json}"
+      SUPERVISOR_ALERT_REPEAT_MINUTES: "${SUPERVISOR_ALERT_REPEAT_MINUTES:-120}"
+    volumes:
+      - app_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect:
+        condition: service_started
+      n8n:
+        condition: service_started
+      orderflow-collector:
         condition: service_started
 
   postgres:

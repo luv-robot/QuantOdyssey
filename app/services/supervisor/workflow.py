@@ -23,6 +23,7 @@ def build_supervisor_report(
     review_sessions: list[ReviewSession] | None = None,
     research_tasks: list[ResearchTask] | None = None,
     research_findings: list[ResearchFinding] | None = None,
+    health_report=None,
 ) -> SupervisorReport:
     review_sessions = review_sessions or []
     research_tasks = research_tasks or []
@@ -34,6 +35,8 @@ def build_supervisor_report(
     flags.extend(_flags_from_review_sessions(review_sessions))
     flags.extend(_flags_from_research_tasks(research_tasks))
     flags.extend(_flags_from_findings(research_findings))
+    if health_report is not None:
+        flags.extend(_flags_from_health_report(health_report))
 
     status = _status_from_flags(flags)
     return SupervisorReport(
@@ -54,6 +57,7 @@ def supervisor_chat_answer(
     agent_eval_run: AgentEvalRun | None = None,
     research_tasks: list[ResearchTask] | None = None,
     review_sessions: list[ReviewSession] | None = None,
+    health_report=None,
 ) -> str:
     lower = question.lower()
     research_tasks = research_tasks or []
@@ -62,7 +66,24 @@ def supervisor_chat_answer(
         agent_eval_run=agent_eval_run,
         review_sessions=review_sessions,
         research_tasks=research_tasks,
+        health_report=health_report,
     )
+
+    if any(key in lower for key in ["health", "健康", "系统", "报错", "error", "异常", "告警"]):
+        system_flags = [
+            flag
+            for flag in report.flags
+            if flag.kind
+            in {
+                SupervisorFlagKind.SYSTEM_HEALTH_FAILURE,
+                SupervisorFlagKind.AUTOMATION_FAILURE,
+                SupervisorFlagKind.NOTIFICATION_FAILURE,
+            }
+        ]
+        if not system_flags:
+            return "当前 Supervisor 没有发现系统级健康告警。可以继续查看 Health Checks 或最近的 SupervisorReport。"
+        top = system_flags[0]
+        return f"当前有 {len(system_flags)} 个系统级告警。优先看：{top.title}。建议：{top.recommended_action}"
 
     if any(key in lower for key in ["fail", "失败", "退化", "eval", "评测"]):
         failed = [
@@ -182,6 +203,34 @@ def _flags_from_findings(findings: list[ResearchFinding]) -> list[SupervisorFlag
     return flags
 
 
+def _flags_from_health_report(health_report) -> list[SupervisorFlag]:
+    flags = []
+    for check in getattr(health_report, "checks", []):
+        status = getattr(check, "status", "ok")
+        if status == "ok":
+            continue
+        name = getattr(check, "name", "unknown")
+        message = getattr(check, "message", "Health check did not provide a message.")
+        severity = SupervisorFlagSeverity.CRITICAL if status == "fail" else SupervisorFlagSeverity.WARN
+        kind = (
+            SupervisorFlagKind.AUTOMATION_FAILURE
+            if any(token in name for token in ["prefect", "n8n", "collector", "scheduler"])
+            else SupervisorFlagKind.SYSTEM_HEALTH_FAILURE
+        )
+        flags.append(
+            SupervisorFlag(
+                flag_id=f"flag_health_{name}_{uuid4().hex[:8]}",
+                kind=kind,
+                severity=severity,
+                title=f"System health check {status}: {name}",
+                summary=message,
+                recommended_action=_health_recommended_action(name, status),
+                evidence_refs=[f"health_check:{name}", f"health_status:{status}"],
+            )
+        )
+    return flags
+
+
 def _status_from_flags(flags: list[SupervisorFlag]) -> SupervisorStatus:
     if any(flag.severity == SupervisorFlagSeverity.CRITICAL for flag in flags):
         return SupervisorStatus.CRITICAL
@@ -203,3 +252,17 @@ def _recommended_next_actions(flags: list[SupervisorFlag]) -> list[str]:
     for flag in flags[:5]:
         actions.append(flag.recommended_action)
     return list(dict.fromkeys(actions))
+
+
+def _health_recommended_action(name: str, status: str) -> str:
+    if name == "database":
+        return "Check Postgres container health, connection credentials, and recent migration/schema errors."
+    if name == "orderflow_collector":
+        return "Inspect orderflow collector logs, Binance connectivity, and latest orderflow_bars freshness."
+    if name in {"prefect", "n8n", "qdrant"}:
+        return f"Check the {name} container, local endpoint, and reverse-proxy/network path before relying on automation."
+    if name == "disk":
+        return "Free disk space or move bulky data/logs before running larger backtests or data backfills."
+    if name == "webhook_secret":
+        return "Set a strong N8N_WEBHOOK_SECRET before accepting external webhook traffic."
+    return f"Inspect `{name}` health details and pause high-cost automation if status remains `{status}`."

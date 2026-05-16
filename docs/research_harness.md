@@ -145,3 +145,18 @@ AgentEvalCase
 The Supervisor may flag ReviewSessions, ResearchTasks, prompts, skills, or scratchpad traces for
 human review. It cannot promote strategies, publish private artifacts, change risk budgets, or bypass
 Harness budget controls.
+
+## Unattended Maintenance Tasks
+
+When `HARNESS_RUNNER_SEED_MAINTENANCE_TASKS=true`, the scheduled Harness runner seeds one bounded
+daily queue for low-risk evidence collection:
+
+- data sufficiency review
+- baseline board rerun
+- baseline-implied / OHLCV regime bucket review
+- Failed Breakout walk-forward and Monte Carlo follow-ups when a replayable universe report exists
+- strategy-level Monte Carlo follow-ups for a small number of recent backtests
+
+These tasks are daily-idempotent, low-autonomy, and still pass through Harness budget guardrails. They
+are meant to keep the private mining machine collecting evidence while the user is away; they should
+not launch large optimizer searches or new alpha-generation campaigns.

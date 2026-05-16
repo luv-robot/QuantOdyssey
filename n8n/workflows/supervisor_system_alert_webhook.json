@@ -1,0 +1,56 @@
+{
+  "id": "quant-odyssey-supervisor-system-alert",
+  "name": "QuantOdyssey Supervisor System Alert",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supervisor-system-alert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "supervisor-system-alert-webhook",
+      "name": "Supervisor System Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "quant-odyssey-supervisor-system-alert"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json; const reportId = body.report_id || 'unknown'; const status = String(body.status || 'unknown').toUpperCase(); const email = body.notify?.user_email || 'luweiword@gmail.com'; const flags = (body.flags || []).slice(0, 8).map((flag) => `- [${flag.severity}] ${flag.kind}: ${flag.title}\\n  ${flag.summary}\\n  action: ${flag.recommended_action}`).join('\\n'); const subject = encodeURIComponent(`[QuantOdyssey][${status}] Supervisor alert ${reportId}`); const text = [`Supervisor system alert`, `status=${body.status}`, `report_id=${reportId}`, body.summary || '', '', `Flags:`, flags || '(none)', '', `Dev agent handoff:`, JSON.stringify(body.dev_agent_handoff || {}, null, 2)].join('\\n'); const mailto = `mailto:${email}?subject=${subject}&body=${encodeURIComponent(text)}`; return [{ json: { ok: true, received: { status: body.status, report_id: reportId, counts: body.counts }, notify: { email, mailto }, dev_agent_handoff: body.dev_agent_handoff || null, note: 'SMTP/Telegram/Feishu credentials can be added later for push delivery; this webhook currently returns a mailto and structured handoff.' } }];"
+      },
+      "id": "build-supervisor-alert-notification",
+      "name": "Build Supervisor Alert Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 300]
+    }
+  ],
+  "connections": {
+    "Supervisor System Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Supervisor Alert Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Supervisor Alert Notification": {
+      "main": [[]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "1"
+}

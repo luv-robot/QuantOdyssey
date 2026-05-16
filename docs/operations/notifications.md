@@ -37,6 +37,43 @@ Payload example:
 The current workflow returns a `mailto:luweiword@gmail.com` link. Fully automatic email
 delivery requires SMTP, Gmail, SendGrid, AWS SES, or another provider credential inside n8n.
 
+## Supervisor System Alerts
+
+The workflow `QuantOdyssey Supervisor System Alert` receives system-level Supervisor alerts:
+
+```text
+POST http://n8n:5678/webhook/supervisor-system-alert
+```
+
+External production route:
+
+```text
+POST https://quantodyssey.com/webhook/supervisor-system-alert
+X-QuantOdyssey-Webhook-Secret: <server secret>
+Authorization: Basic <dashboard credentials>
+```
+
+Payloads include:
+
+```json
+{
+  "type": "supervisor_system_alert",
+  "status": "critical",
+  "summary": "Supervisor status is critical...",
+  "notify": {
+    "user_email": "luweiword@gmail.com",
+    "dev_agent_channel": "dashboard_supervisor_inbox"
+  },
+  "dev_agent_handoff": {
+    "priority": "critical",
+    "instruction": "Inspect the latest SupervisorReport..."
+  }
+}
+```
+
+By default this workflow returns a `mailto:` link and structured developer-agent handoff. Add SMTP,
+Telegram, or Feishu nodes after the code node when you want true push notifications.
+
 ## Telegram
 
 Recommended path:

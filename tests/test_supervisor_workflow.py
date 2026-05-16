@@ -6,6 +6,7 @@ from app.models import (
     SupervisorFlagKind,
     SupervisorStatus,
 )
+from app.services.operations import HealthCheck, HealthReport, build_supervisor_alert_payload
 from app.services.agent_eval import evaluate_agent_response, run_agent_eval_suite
 from app.services.reviewer import build_review_session
 from app.services.supervisor import build_supervisor_report, supervisor_chat_answer
@@ -74,6 +75,50 @@ def test_supervisor_chat_routes_to_eval_and_review_context() -> None:
     )
 
     assert "Agent Eval" in answer or "eval" in answer
+
+
+def test_supervisor_report_flags_system_health_failures() -> None:
+    health_report = HealthReport(
+        status="fail",
+        generated_at="2026-05-16T00:00:00Z",
+        checks=[
+            HealthCheck(name="database", status="ok", message="Database is healthy."),
+            HealthCheck(name="orderflow_collector", status="fail", message="Orderflow is stale."),
+            HealthCheck(name="disk", status="warn", message="/app disk usage is 91%."),
+        ],
+    )
+
+    report = build_supervisor_report(health_report=health_report)
+    answer = supervisor_chat_answer("系统有没有报错？", report=report, health_report=health_report)
+
+    assert report.status == SupervisorStatus.CRITICAL
+    assert {flag.kind for flag in report.flags} >= {
+        SupervisorFlagKind.AUTOMATION_FAILURE,
+        SupervisorFlagKind.SYSTEM_HEALTH_FAILURE,
+    }
+    assert "系统级告警" in answer
+
+
+def test_supervisor_alert_payload_contains_user_and_dev_agent_handoff() -> None:
+    health_report = HealthReport(
+        status="fail",
+        generated_at="2026-05-16T00:00:00Z",
+        checks=[HealthCheck(name="prefect", status="fail", message="Prefect is down.")],
+    )
+    report = build_supervisor_report(health_report=health_report)
+
+    payload = build_supervisor_alert_payload(
+        report,
+        health_report=health_report,
+        user_email="ops@example.com",
+        dev_agent_channel="codex_dev_agent",
+    )
+
+    assert payload["type"] == "supervisor_system_alert"
+    assert payload["notify"]["user_email"] == "ops@example.com"
+    assert payload["notify"]["dev_agent_channel"] == "codex_dev_agent"
+    assert payload["dev_agent_handoff"]["priority"] == "critical"
+    assert payload["health_report"]["status"] == "fail"
 
 
 def test_repository_persists_agent_eval_and_supervisor_report() -> None:

@@ -16,7 +16,12 @@ from app.models import (
     StrategyFamily,
     TradeRecord,
 )
-from app.services.harness import HarnessRunnerConfig, read_scratchpad_events, run_research_harness_queue
+from app.services.harness import (
+    HarnessRunnerConfig,
+    read_scratchpad_events,
+    run_research_harness_queue,
+    seed_unattended_research_tasks,
+)
 from app.storage import QuantRepository
 
 
@@ -264,6 +269,22 @@ def test_harness_runner_executes_strategy_monte_carlo_task(tmp_path) -> None:
     assert report is not None
     assert report.source_backtest_id == backtest.backtest_id
     assert report.approved_to_run is True
+
+
+def test_seed_unattended_research_tasks_creates_daily_low_risk_queue() -> None:
+    repository = QuantRepository()
+
+    seeded = seed_unattended_research_tasks(repository, run_date=datetime(2026, 5, 16))
+    seeded_again = seed_unattended_research_tasks(repository, run_date=datetime(2026, 5, 16))
+
+    assert seeded_again == []
+    assert {task.task_type for task in seeded} >= {
+        ResearchTaskType.DATA_SUFFICIENCY_REVIEW,
+        ResearchTaskType.BASELINE_TEST,
+        ResearchTaskType.REGIME_BUCKET_TEST,
+    }
+    assert all(task.approval_required is False for task in seeded)
+    assert all(task.autonomy_level <= 2 for task in seeded)
 
 
 def _task(

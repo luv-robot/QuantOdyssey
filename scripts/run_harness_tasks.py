@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.services.harness import HarnessRunnerConfig, run_research_harness_queue  # noqa: E402
+from app.services.harness import HarnessRunnerConfig, run_research_harness_queue, seed_unattended_research_tasks  # noqa: E402
 from app.storage import QuantRepository  # noqa: E402
 
 
@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--walk-forward-min-pass-rate", type=float, default=0.5)
     parser.add_argument("--walk-forward-horizon-hours", type=int, default=2)
     parser.add_argument("--walk-forward-fee-rate", type=float, default=0.001)
+    parser.add_argument("--seed-maintenance-tasks", action="store_true")
     args = parser.parse_args()
 
     config = HarnessRunnerConfig(
@@ -57,14 +58,17 @@ def main() -> int:
         walk_forward_fee_rate=args.walk_forward_fee_rate,
     )
     repository = QuantRepository(args.database_url)
+    seeded = seed_unattended_research_tasks(repository) if args.seed_maintenance_tasks else []
     summary = run_research_harness_queue(repository, config=config)
-    print(json.dumps(_summary_dict(summary), indent=2))
+    print(json.dumps(_summary_dict(summary, seeded=seeded), indent=2))
     return 0
 
 
-def _summary_dict(summary) -> dict:
+def _summary_dict(summary, *, seeded=None) -> dict:
+    seeded = seeded or []
     return {
         "run_id": summary.run_id,
+        "seeded_task_ids": [task.task_id for task in seeded],
         "considered": summary.considered,
         "executed": summary.executed,
         "skipped": summary.skipped,

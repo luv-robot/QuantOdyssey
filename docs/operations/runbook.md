@@ -99,6 +99,34 @@ HARNESS_RUNNER_SCRATCHPAD_DIR=/app/logs/harness_scratchpad
 
 The runner writes scratchpad JSONL files to `app_logs` so automatic research decisions can be audited.
 
+## Supervisor System Monitor
+
+The VPS runs `supervisor-monitor-scheduler` every 15 minutes by default.
+
+It performs:
+
+- database, orderflow, Qdrant, Prefect, n8n, disk, and webhook-secret health checks
+- SupervisorReport persistence for the Dashboard
+- critical alert payload delivery through n8n or configured webhooks
+- developer-agent handoff payload generation for system-level failures
+
+Manual run:
+
+```bash
+docker compose -f docker-compose.vps.yml exec -T app python scripts/run_supervisor_system_monitor.py --json
+```
+
+Useful environment variables:
+
+```text
+SUPERVISOR_MONITOR_CRON=*/15 * * * *
+SUPERVISOR_ALERT_WEBHOOK_URL=http://n8n:5678/webhook/supervisor-system-alert
+SUPERVISOR_DEV_AGENT_WEBHOOK_URL=
+SUPERVISOR_ALERT_EMAIL_TO=luweiword@gmail.com
+SUPERVISOR_ALERT_REPEAT_MINUTES=120
+SUPERVISOR_ALERT_ON_WARN=false
+```
+
 ## Backups
 
 Run a manual backup on the VPS:

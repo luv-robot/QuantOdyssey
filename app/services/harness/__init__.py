@@ -18,6 +18,7 @@ from app.services.harness.intake import (
     ThesisIntakeHarnessResult,
     build_thesis_intake_harness_cycle,
 )
+from app.services.harness.maintenance import seed_unattended_research_tasks
 from app.services.harness.research_loop import build_research_harness_cycle
 from app.services.harness.runner import (
     HarnessQueueRunSummary,
@@ -59,6 +60,7 @@ __all__ = [
     "HarnessRunnerConfig",
     "HarnessTaskRunResult",
     "run_research_harness_queue",
+    "seed_unattended_research_tasks",
     "build_event_definition_universe_report",
     "build_failed_breakout_universe_report",
     "build_data_sufficiency_gate",

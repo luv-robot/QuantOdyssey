@@ -55,6 +55,8 @@ def run_harness_queue() -> None:
         "--walk-forward-fee-rate",
         os.getenv("HARNESS_RUNNER_WALK_FORWARD_FEE_RATE", "0.001"),
     ]
+    if _truthy(os.getenv("HARNESS_RUNNER_SEED_MAINTENANCE_TASKS", "true")):
+        command.append("--seed-maintenance-tasks")
     for symbol in symbols:
         command.extend(["--symbol", symbol])
     for timeframe in timeframes:

@@ -7,4 +7,7 @@ docker compose -f "$COMPOSE_FILE" exec -T n8n \
   n8n import:workflow --input=/files/n8n/workflows/research_thesis_webhook.json
 
 docker compose -f "$COMPOSE_FILE" exec -T n8n \
+  n8n import:workflow --input=/files/n8n/workflows/supervisor_system_alert_webhook.json
+
+docker compose -f "$COMPOSE_FILE" exec -T n8n \
   n8n list:workflow

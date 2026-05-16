@@ -23,6 +23,9 @@ class SupervisorFlagKind(str, Enum):
     REVIEW_SESSION_RISK = "review_session_risk"
     TASK_BUDGET_RISK = "task_budget_risk"
     DATA_GAP = "data_gap"
+    SYSTEM_HEALTH_FAILURE = "system_health_failure"
+    AUTOMATION_FAILURE = "automation_failure"
+    NOTIFICATION_FAILURE = "notification_failure"
     SYSTEM_NOTE = "system_note"
 
 
