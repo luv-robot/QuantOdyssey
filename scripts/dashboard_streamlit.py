@@ -311,6 +311,13 @@ def render_research_workbench(engine, database_url: str) -> None:
     robustness_reports = recent_records(engine, "robustness_reports", limit=300)
     review_sessions = recent_records(engine, "review_sessions", limit=300)
     latest_tasks = recent_records(engine, "research_tasks", limit=40)
+    research_findings = recent_records(engine, "research_findings", limit=200)
+    failed_breakout_universes = recent_records(engine, "failed_breakout_universe_reports", limit=100)
+    event_definition_universes = recent_records(engine, "event_definition_universe_reports", limit=100)
+    walk_forward_reports = recent_records(engine, "strategy_family_walk_forward_reports", limit=80)
+    family_monte_carlo_reports = recent_records(engine, "strategy_family_monte_carlo_reports", limit=80)
+    strategy_monte_carlo_reports = recent_records(engine, "monte_carlo_backtests", limit=120)
+    orderflow_acceptance_reports = recent_records(engine, "strategy_family_orderflow_acceptance_reports", limit=80)
     board, regime, error = _build_dashboard_baseline_regime()
 
     left_col, center_col, right_col = st.columns([0.82, 1.55, 0.86], gap="large")
@@ -407,6 +414,21 @@ def render_research_workbench(engine, database_url: str) -> None:
             strategy_id=None if not selected_strategy else selected_strategy.get("strategy_id"),
         )
         _render_harness_progress(scoped_tasks or latest_tasks[:8])
+
+        st.write("### 研究进展时间线")
+        timeline_items = _build_research_timeline(
+            findings=research_findings,
+            walk_forward_reports=walk_forward_reports,
+            family_monte_carlo_reports=family_monte_carlo_reports,
+            strategy_monte_carlo_reports=strategy_monte_carlo_reports,
+            orderflow_acceptance_reports=orderflow_acceptance_reports,
+            universe_reports=[*failed_breakout_universes, *event_definition_universes],
+            strategies=strategies,
+            thesis_id=None if not selected_thesis else selected_thesis.get("thesis_id"),
+            strategy_id=None if not selected_strategy else selected_strategy.get("strategy_id"),
+            limit=10,
+        )
+        _render_research_timeline(timeline_items)
 
         st.write("### 快速入口")
         st.info("Run Detail：查看策略证据链")
@@ -1105,6 +1127,267 @@ def _render_harness_progress(tasks: list[dict]) -> None:
             st.info(label)
         st.progress(max(0.0, min(1.0, priority / 100)))
         st.caption(task.get("hypothesis", "")[:180])
+
+
+def _build_research_timeline(
+    *,
+    findings: list[dict],
+    walk_forward_reports: list[dict],
+    family_monte_carlo_reports: list[dict],
+    strategy_monte_carlo_reports: list[dict],
+    orderflow_acceptance_reports: list[dict],
+    universe_reports: list[dict],
+    strategies: list[dict],
+    thesis_id: str | None,
+    strategy_id: str | None,
+    limit: int = 10,
+) -> list[dict]:
+    universe_by_id = {
+        record.get("report_id"): record
+        for record in universe_reports
+        if record.get("report_id")
+    }
+    strategy_to_thesis = {
+        record.get("strategy_id"): record.get("thesis_id")
+        for record in strategies
+        if record.get("strategy_id")
+    }
+    items: list[dict] = []
+
+    for finding in findings:
+        if not _timeline_scope_matches(finding, thesis_id=thesis_id, strategy_id=strategy_id):
+            continue
+        kind = finding.get("finding_type", "finding")
+        severity = finding.get("severity", "low")
+        observations = finding.get("observations") or []
+        items.append(
+            _timeline_item(
+                created_at=finding.get("created_at"),
+                kind=_label_from_slug(kind),
+                title=f"Finding · {_label_from_slug(kind)}",
+                level=_severity_level(severity),
+                summary=finding.get("summary") or "Harness recorded a research finding.",
+                metrics=[f"severity={severity}", *_compact_list(observations, 2)],
+                refs=finding.get("evidence_refs") or [],
+            )
+        )
+
+    for report in walk_forward_reports:
+        source = universe_by_id.get(report.get("source_universe_report_id"), {})
+        if not _timeline_scope_matches(source, thesis_id=thesis_id, strategy_id=None):
+            continue
+        passed = bool(report.get("passed"))
+        pass_rate = float(report.get("pass_rate") or 0)
+        items.append(
+            _timeline_item(
+                created_at=report.get("created_at"),
+                kind="Walk-forward",
+                title=f"Walk-forward · {report.get('strategy_family', 'strategy family')}",
+                level="good" if passed else "warn",
+                summary=_first_or_default(
+                    report.get("findings"),
+                    "Walk-forward validation completed.",
+                ),
+                metrics=[
+                    f"pass_rate={pass_rate:.1%}",
+                    f"windows={report.get('completed_windows', 0)}",
+                    f"passed={report.get('passed_windows', 0)}",
+                    f"min_trades={report.get('min_trades_per_window', '-')}",
+                ],
+                refs=[
+                    f"strategy_family_walk_forward_report:{report.get('report_id')}",
+                    f"source_universe_report:{report.get('source_universe_report_id')}",
+                ],
+            )
+        )
+
+    for report in family_monte_carlo_reports:
+        source = universe_by_id.get(report.get("source_universe_report_id"), {})
+        if not _timeline_scope_matches(source, thesis_id=thesis_id, strategy_id=None):
+            continue
+        passed = bool(report.get("passed"))
+        level = "good" if passed else "warn"
+        if report.get("requires_human_confirmation") and not report.get("approved_to_run"):
+            level = "high"
+        items.append(
+            _timeline_item(
+                created_at=report.get("created_at"),
+                kind="Monte Carlo",
+                title=f"Family MC · {report.get('strategy_family', 'strategy family')}",
+                level=level,
+                summary=_first_or_default(report.get("findings"), "Strategy-family Monte Carlo completed."),
+                metrics=[
+                    f"p_loss={_fmt_pct_compact(report.get('probability_of_loss'))}",
+                    f"p05={_fmt_pct_compact(report.get('p05_return'))}",
+                    f"sample={report.get('sampled_trade_count', 0)}",
+                    f"sims={report.get('simulations', 0)}",
+                ],
+                refs=[
+                    f"strategy_family_monte_carlo_report:{report.get('report_id')}",
+                    f"source_universe_report:{report.get('source_universe_report_id')}",
+                ],
+            )
+        )
+
+    for report in orderflow_acceptance_reports:
+        source = universe_by_id.get(report.get("source_universe_report_id"), {})
+        if not _timeline_scope_matches(source, thesis_id=thesis_id, strategy_id=None):
+            continue
+        passed = bool(report.get("passed"))
+        items.append(
+            _timeline_item(
+                created_at=report.get("created_at"),
+                kind="Orderflow",
+                title=f"Orderflow · {report.get('strategy_family', 'strategy family')}",
+                level="good" if passed else "warn",
+                summary=_first_or_default(report.get("findings"), "Orderflow acceptance validation completed."),
+                metrics=[
+                    f"confirm={_fmt_pct_compact(report.get('confirmation_rate'))}",
+                    f"conflict={_fmt_pct_compact(report.get('conflict_rate'))}",
+                    f"events={report.get('events_with_orderflow', 0)}",
+                ],
+                refs=[
+                    f"strategy_family_orderflow_acceptance_report:{report.get('report_id')}",
+                    f"source_universe_report:{report.get('source_universe_report_id')}",
+                ],
+            )
+        )
+
+    for report in strategy_monte_carlo_reports:
+        report_strategy_id = report.get("strategy_id")
+        report_thesis_id = strategy_to_thesis.get(report_strategy_id)
+        if strategy_id and report_strategy_id != strategy_id:
+            continue
+        if thesis_id and report_thesis_id != thesis_id and not strategy_id:
+            continue
+        if thesis_id and strategy_id and report_strategy_id != strategy_id and report_thesis_id != thesis_id:
+            continue
+        level = "good"
+        if report.get("requires_human_confirmation") and not report.get("approved_to_run"):
+            level = "high"
+        elif float(report.get("probability_of_loss") or 0) >= 0.45 or float(report.get("p05_return") or 0) < -0.1:
+            level = "warn"
+        items.append(
+            _timeline_item(
+                created_at=report.get("created_at"),
+                kind="Monte Carlo",
+                title=f"Strategy MC · {report_strategy_id or 'strategy'}",
+                level=level,
+                summary="Strategy-level Monte Carlo path-risk test completed.",
+                metrics=[
+                    f"p_loss={_fmt_pct_compact(report.get('probability_of_loss'))}",
+                    f"median={_fmt_pct_compact(report.get('median_return'))}",
+                    f"p05={_fmt_pct_compact(report.get('p05_return'))}",
+                    f"horizon={report.get('horizon_trades', 0)}",
+                ],
+                refs=[
+                    f"monte_carlo_backtest:{report.get('report_id')}",
+                    f"backtest:{report.get('source_backtest_id')}",
+                ],
+            )
+        )
+
+    return sorted(items, key=lambda item: item["_sort_at"], reverse=True)[:limit]
+
+
+def _render_research_timeline(items: list[dict]) -> None:
+    if not items:
+        st.info("暂无自动研究结论。Harness 会在定时任务中继续扫描队列。")
+        return
+    attention_count = sum(1 for item in items if item["level"] in {"warn", "high"})
+    cols = st.columns(2)
+    cols[0].metric("Recent Events", len(items))
+    cols[1].metric("Need Attention", attention_count)
+    for item in items:
+        headline = f"{item['icon']} {item['title']}"
+        message = f"{headline}\n\n{item['summary']}"
+        if item["level"] == "high":
+            st.error(message)
+        elif item["level"] == "warn":
+            st.warning(message)
+        elif item["level"] == "good":
+            st.success(message)
+        else:
+            st.info(message)
+        meta = " · ".join([item["display_at"], item["kind"], *item["metrics"]])
+        st.caption(meta)
+        refs = [ref for ref in item.get("refs", []) if ref and not ref.endswith(":None")]
+        if refs:
+            with st.expander("artifact refs", expanded=False):
+                for ref in refs[:6]:
+                    st.code(ref, language=None)
+
+
+def _timeline_item(
+    *,
+    created_at,
+    kind: str,
+    title: str,
+    level: str,
+    summary: str,
+    metrics: list[str],
+    refs: list[str],
+) -> dict:
+    parsed = _parse_datetime(created_at)
+    return {
+        "_sort_at": parsed or datetime.min,
+        "display_at": "-" if parsed is None else parsed.strftime("%m-%d %H:%M"),
+        "kind": kind,
+        "title": title,
+        "level": level,
+        "icon": {"high": "!", "warn": "!", "good": "✓", "info": "•"}.get(level, "•"),
+        "summary": summary,
+        "metrics": [item for item in metrics if item],
+        "refs": refs,
+    }
+
+
+def _timeline_scope_matches(record: dict, *, thesis_id: str | None, strategy_id: str | None) -> bool:
+    if strategy_id and record.get("strategy_id") == strategy_id:
+        return True
+    if thesis_id and record.get("thesis_id") == thesis_id:
+        return True
+    if strategy_id or thesis_id:
+        return False
+    return True
+
+
+def _severity_level(severity: str) -> str:
+    return {"high": "high", "medium": "warn", "low": "info"}.get(str(severity).lower(), "info")
+
+
+def _label_from_slug(value: str) -> str:
+    return str(value).replace("_", " ").replace("-", " ").title()
+
+
+def _compact_list(values: list, limit: int) -> list[str]:
+    return [str(item)[:110] for item in values[:limit]]
+
+
+def _first_or_default(values, default: str) -> str:
+    if isinstance(values, list) and values:
+        return str(values[0])
+    return default
+
+
+def _fmt_pct_compact(value) -> str:
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.1%}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _parse_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
 
 
 def _status_symbol(status: str) -> str:
