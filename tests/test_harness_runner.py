@@ -77,6 +77,9 @@ def test_harness_runner_executes_baseline_task_with_local_ohlcv(tmp_path) -> Non
     finding = repository.query_research_findings(thesis_id="thesis_runner")[0]
     assert finding.finding_type == "baseline_test"
     assert any("Best baseline family" in item for item in finding.observations)
+    assert any("Cost-adjusted baselines" in item for item in finding.observations)
+    assert any("Next experiment:" in item for item in finding.observations)
+    assert any("baseline_board_review" in ref for ref in finding.evidence_refs)
     assert any("baseline_implied_regime" in ref for ref in finding.evidence_refs)
 
 

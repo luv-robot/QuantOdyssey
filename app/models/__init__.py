@@ -100,6 +100,7 @@ from app.models.publication import (
     PublicThesisCard,
 )
 from app.models.review import (
+    BaselineBoardReview,
     ResearchMaturityScore,
     ReviewCase,
     ReviewClaim,
@@ -180,6 +181,7 @@ __all__ = [
     "ArenaScoreComponent",
     "ArenaScoreReport",
     "BacktestValidationReport",
+    "BaselineBoardReview",
     "BaselineComparisonReport",
     "BaselineResult",
     "CandidateRankingResult",

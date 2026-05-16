@@ -1,4 +1,5 @@
 from app.services.reviewer.negative_results import build_negative_result_case
+from app.services.reviewer.baseline_board_review import build_baseline_board_review
 from app.services.reviewer.reviewer import build_review_case
 from app.services.reviewer.review_session import build_review_session
 from app.services.reviewer.trade_analysis import (
@@ -11,6 +12,7 @@ from app.services.reviewer.trade_analysis import (
 )
 
 __all__ = [
+    "build_baseline_board_review",
     "build_enhanced_review_metrics",
     "build_negative_result_case",
     "build_review_case",

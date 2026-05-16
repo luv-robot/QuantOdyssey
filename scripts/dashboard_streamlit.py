@@ -23,9 +23,14 @@ from app.models import (  # noqa: E402
 from app.services.operations import run_health_checks  # noqa: E402
 from app.services.agent_eval import build_builtin_agent_eval_cases, run_agent_eval_suite  # noqa: E402
 from app.services.assistant import build_dashboard_assistant_answer, build_dashboard_context  # noqa: E402
-from app.services.harness import build_baseline_implied_regime_report, build_strategy_family_baseline_board  # noqa: E402
+from app.services.harness import (  # noqa: E402
+    build_baseline_implied_regime_report,
+    build_strategy_family_baseline_board,
+    build_strategy_family_baseline_boards_by_timeframe,
+)
 from app.services.market_data import build_orderflow_health_report, load_freqtrade_ohlcv  # noqa: E402
 from app.services.metrics import performance_metric_registry  # noqa: E402
+from app.services.reviewer import build_baseline_board_review  # noqa: E402
 from app.services.researcher import (  # noqa: E402
     build_research_design_draft,
     build_thesis_data_contract,
@@ -348,7 +353,7 @@ def render_research_workbench(engine, database_url: str) -> None:
     family_monte_carlo_reports = recent_records(engine, "strategy_family_monte_carlo_reports", limit=80)
     strategy_monte_carlo_reports = recent_records(engine, "monte_carlo_backtests", limit=120)
     orderflow_acceptance_reports = recent_records(engine, "strategy_family_orderflow_acceptance_reports", limit=80)
-    board, regime, error = _build_dashboard_baseline_regime()
+    board, regime, baseline_review, timeframe_boards, error = _build_dashboard_baseline_regime()
 
     left_col, center_col, right_col = st.columns([0.82, 1.55, 0.86], gap="large")
     selected_thesis = recent_theses[0] if recent_theses else None
@@ -400,6 +405,8 @@ def render_research_workbench(engine, database_url: str) -> None:
             elif regime:
                 _render_regime_score_bars(regime)
                 _render_baseline_direction_snapshot(board)
+                _render_baseline_ai_review(baseline_review)
+                _render_timeframe_baseline_snapshot(timeframe_boards)
             else:
                 st.info("暂无 regime 要素评分。")
 
@@ -784,7 +791,7 @@ def _build_assistant_context(engine) -> dict:
     theses = recent_records(engine, "research_theses", limit=5)
     tasks = recent_records(engine, "research_tasks", limit=8)
     reviews = recent_records(engine, "review_sessions", limit=5)
-    board, regime, _ = _build_dashboard_baseline_regime()
+    board, regime, _, _, _ = _build_dashboard_baseline_regime()
     catalog_summary = {
         "lean_items": _table_count(engine, "strategy_catalog_items"),
         "lean_reports": _table_count(engine, "strategy_catalog_reports"),
@@ -1159,6 +1166,55 @@ def _render_baseline_direction_snapshot(board: dict | None) -> None:
     st.dataframe(table_rows, use_container_width=True, hide_index=True)
 
 
+def _render_baseline_ai_review(review: dict | None) -> None:
+    if not review:
+        return
+    st.write("**Baseline AI Review**")
+    st.caption(review.get("summary", "No review summary available."))
+    scorecard = review.get("scorecard") or {}
+    if scorecard:
+        metrics = st.columns(4)
+        metrics[0].metric("leader", scorecard.get("leader_family") or "-")
+        metrics[1].metric("active winners", scorecard.get("active_net_winner_count", 0))
+        metrics[2].metric("gross→net flips", scorecard.get("active_gross_positive_net_negative_count", 0))
+        metrics[3].metric("high cost drag", scorecard.get("high_cost_drag_active_count", 0))
+    negatives = [item.get("statement") for item in review.get("evidence_against") or [] if item.get("statement")]
+    blind_spots = [item.get("statement") for item in review.get("blind_spots") or [] if item.get("statement")]
+    next_experiments = review.get("next_experiments") or []
+    if negatives:
+        st.warning(" / ".join(negatives[:2]))
+    if blind_spots:
+        st.caption("Blind spot: " + " / ".join(blind_spots[:2]))
+    if next_experiments:
+        st.caption("Next: " + " / ".join(next_experiments[:2]))
+
+
+def _render_timeframe_baseline_snapshot(timeframe_boards: dict | None) -> None:
+    if not timeframe_boards:
+        return
+    rows = []
+    for timeframe, board in sorted(timeframe_boards.items()):
+        board_rows = board.get("rows") or []
+        leader = max(board_rows, key=lambda item: float(item.get("total_return") or 0), default=None)
+        if leader is None:
+            continue
+        rows.append(
+            {
+                "timeframe": timeframe,
+                "leader": leader.get("display_name") or leader.get("strategy_family"),
+                "net": _fmt_pct(leader.get("total_return")),
+                "gross": _fmt_pct(leader.get("gross_return")),
+                "cost": _fmt_pct(leader.get("cost_drag")),
+                "trades": leader.get("trades", "-"),
+                "window_start": _short_datetime(board.get("common_start_at")),
+                "window_end": _short_datetime(board.get("common_end_at")),
+            }
+        )
+    if rows:
+        st.write("**Timeframe Baseline Leaders**")
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
 def _tasks_for_scope(tasks: list[dict], *, thesis_id: str | None, strategy_id: str | None) -> list[dict]:
     scoped = []
     for task in tasks:
@@ -1511,15 +1567,30 @@ def _fmt_num(value) -> str:
         return "-"
 
 
+def _short_datetime(value) -> str:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return "-"
+    return parsed.strftime("%Y-%m-%d")
+
+
 @st.cache_data(ttl=300)
-def _build_dashboard_baseline_regime() -> tuple[dict | None, dict | None, str | None]:
+def _build_dashboard_baseline_regime() -> tuple[dict | None, dict | None, dict | None, dict | None, str | None]:
     try:
         candles_by_cell = _load_dashboard_candles()
         board = build_strategy_family_baseline_board(candles_by_cell)
+        timeframe_boards = build_strategy_family_baseline_boards_by_timeframe(candles_by_cell)
         regime = build_baseline_implied_regime_report(board)
-        return board.model_dump(mode="json"), regime.model_dump(mode="json"), None
+        baseline_review = build_baseline_board_review(board, regime=regime, timeframe_boards=timeframe_boards)
+        return (
+            board.model_dump(mode="json"),
+            regime.model_dump(mode="json"),
+            baseline_review.model_dump(mode="json"),
+            {timeframe: item.model_dump(mode="json") for timeframe, item in timeframe_boards.items()},
+            None,
+        )
     except Exception as exc:
-        return None, None, f"Baseline regime scan unavailable: {exc}"
+        return None, None, None, None, f"Baseline regime scan unavailable: {exc}"
 
 
 def _load_dashboard_candles():

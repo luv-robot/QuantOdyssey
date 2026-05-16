@@ -87,3 +87,25 @@ class ReviewSession(BaseModel):
     user_responses: list[str] = Field(default_factory=list)
     maturity_score: ResearchMaturityScore
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BaselineBoardReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str = Field(min_length=1)
+    source_baseline_board_id: str = Field(min_length=1)
+    source_regime_report_id: Optional[str] = None
+    timeframe_scope: str = Field(min_length=1)
+    leader_family: Optional[str] = None
+    leader_net_return: float = 0
+    leader_gross_return: float = 0
+    leader_cost_drag: float = 0
+    scorecard: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
+    evidence_for: list[ReviewClaim] = Field(default_factory=list)
+    evidence_against: list[ReviewClaim] = Field(default_factory=list)
+    blind_spots: list[ReviewClaim] = Field(default_factory=list)
+    ai_questions: list[ReviewQuestion] = Field(default_factory=list)
+    next_experiments: list[str] = Field(default_factory=list)
+    recommended_research_tasks: list[str] = Field(default_factory=list)
+    summary: str = Field(min_length=1)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

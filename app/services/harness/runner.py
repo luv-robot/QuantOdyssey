@@ -33,7 +33,9 @@ from app.services.harness.screening import (
     build_baseline_implied_regime_report,
     build_regime_coverage_report,
     build_strategy_family_baseline_board,
+    build_strategy_family_baseline_boards_by_timeframe,
 )
+from app.services.reviewer import build_baseline_board_review
 from app.services.harness.validation import (
     run_failed_breakout_bootstrap_monte_carlo,
     run_failed_breakout_walk_forward_validation,
@@ -320,13 +322,19 @@ def _execute_baseline_test(
             )
         ]
     board = build_strategy_family_baseline_board(candles_by_cell)
+    timeframe_boards = build_strategy_family_baseline_boards_by_timeframe(candles_by_cell)
     regime = build_baseline_implied_regime_report(board)
+    review = build_baseline_board_review(board, regime=regime, timeframe_boards=timeframe_boards)
     append_scratchpad_event(
         run_id=scratchpad_run.run_id,
         event_type=ScratchpadEventType.NOTE,
         payload={
             "baseline_board": board.model_dump(mode="json"),
+            "baseline_boards_by_timeframe": {
+                timeframe: item.model_dump(mode="json") for timeframe, item in timeframe_boards.items()
+            },
             "baseline_implied_regime": regime.model_dump(mode="json"),
+            "baseline_board_review": review.model_dump(mode="json"),
             "skipped_cells": skipped,
         },
         task_id=task.task_id,
@@ -336,7 +344,10 @@ def _execute_baseline_test(
         base_dir=config.scratchpad_base_dir,
     )
     rows = [
-        f"{row.strategy_family}: return={row.total_return:.4f}, pf={row.profit_factor:.4f}, trades={row.trades}"
+        (
+            f"{row.strategy_family}: net={row.total_return:.4f}, gross={row.gross_return:.4f}, "
+            f"cost_drag={row.cost_drag:.4f}, pf={row.profit_factor:.4f}, trades={row.trades}"
+        )
         for row in board.rows
     ]
     return [
@@ -348,11 +359,15 @@ def _execute_baseline_test(
             observations=[
                 *board.findings,
                 *regime.findings,
+                review.summary,
+                *[claim.statement for claim in review.evidence_against],
+                *[f"Next experiment: {item}" for item in review.next_experiments],
                 *rows,
             ],
             evidence_gaps=skipped,
             evidence_refs=[
                 f"scratchpad:{scratchpad_run.run_id}:strategy_family_baseline_board:{board.board_id}",
+                f"scratchpad:{scratchpad_run.run_id}:baseline_board_review:{review.review_id}",
                 f"scratchpad:{scratchpad_run.run_id}:baseline_implied_regime:{regime.report_id}",
             ],
         )
