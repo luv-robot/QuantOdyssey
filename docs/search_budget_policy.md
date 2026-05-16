@@ -45,6 +45,20 @@ search cost is high but baseline advantage is weak
 
 Search budget is not a moral penalty. It is a confidence adjustment against survivor bias.
 
+## Resource Cost And Free-Tier Boundary
+
+Search budget also has a product boundary: some tests are too expensive to run as unlimited free
+defaults. The current policy is recorded in
+[`resource_cost_and_free_tier_policy.md`](resource_cost_and_free_tier_policy.md).
+
+In short:
+
+```text
+free: thesis intake, pre-review, data checks, cached/simple baselines, small smoke tests
+quota/credits: small Monte Carlo, small sensitivity tests, limited cross-symbol checks
+approval/paid: full grid, large optimizer, wide universe, tick/orderflow, paid-data runs
+```
+
 ## Low-Frequency Template Guardrail
 
 Some strategy ideas may be conceptually strong but too rare for the current research loop. When the
