@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, inspect, text  # noqa: E402
 
 from app.flows.human_research_pipeline import run_human_research_pipeline  # noqa: E402
 from app.models import (  # noqa: E402
+    BacktestCostModel,
     MarketSignal,
     MonteCarloBacktestConfig,
     PreReviewStatus,
@@ -191,6 +192,28 @@ def render_research_pipeline(engine, database_url: str) -> None:
         mc_simulations = middle.number_input("MC simulations", min_value=10, max_value=100000, value=500)
         mc_horizon = right.number_input("MC horizon trades", min_value=1, max_value=10000, value=100)
         backtest_mode = st.selectbox("Backtest mode", ["real", "mock"], index=0)
+        with st.expander("Cost model", expanded=False):
+            st.caption("Defaults apply to this submitted strategy run; adjust only when you have a reason.")
+            cost_left, cost_mid, cost_right, funding_col = st.columns(4)
+            fee_rate = cost_left.number_input(
+                "Fee / side",
+                min_value=0.0,
+                max_value=0.1,
+                value=0.0005,
+                step=0.0001,
+                format="%.5f",
+            )
+            slippage_bps = cost_mid.number_input("Slippage bps / side", min_value=0.0, value=2.0, step=0.5)
+            spread_bps = cost_right.number_input("Spread bps / side", min_value=0.0, value=0.0, step=0.5)
+            funding_rate_8h = funding_col.number_input(
+                "Funding / 8h",
+                min_value=-0.1,
+                max_value=0.1,
+                value=0.0,
+                step=0.0001,
+                format="%.5f",
+            )
+            funding_source = st.text_input("Funding source", value="not_available")
         approve_expensive = st.checkbox("Approve expensive Monte Carlo if threshold is exceeded")
         pre_review_only = st.form_submit_button("Preview Research Design")
         submitted = st.form_submit_button("Run Research Pipeline")
@@ -293,6 +316,13 @@ def render_research_pipeline(engine, database_url: str) -> None:
             ),
             approve_expensive_monte_carlo=approve_expensive,
             backtest_mode=backtest_mode,
+            cost_model=BacktestCostModel(
+                fee_rate=float(fee_rate),
+                slippage_bps=float(slippage_bps),
+                spread_bps=float(spread_bps),
+                funding_rate_8h=float(funding_rate_8h),
+                funding_source=funding_source.strip() or "not_available",
+            ),
         )
 
     if result.selected_candidate_id:
