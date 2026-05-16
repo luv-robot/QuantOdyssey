@@ -11,7 +11,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pandas>=2.0,<4",
+    "pyarrow>=7.0",
     "pytest>=8.0,<9",
+    "streamlit>=1.32,<2",
 ]
 dashboard = [
     "streamlit>=1.32,<2",
