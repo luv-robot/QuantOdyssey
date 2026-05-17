@@ -283,7 +283,12 @@ def run_human_research_pipeline(
             random_seed=monte_carlo_config.seed if monte_carlo_config is not None else None,
         )
         repository.save_experiment_manifest(experiment_manifest)
-        baseline_comparison = _compare_to_baselines(signal, backtest, backtest_metadata)
+        baseline_comparison = _compare_to_baselines(
+            signal,
+            backtest,
+            backtest_metadata,
+            cost_model=resolved_cost_model,
+        )
         repository.save_baseline_comparison(baseline_comparison)
 
         validation = _validate_backtest(backtest)
@@ -599,14 +604,16 @@ def _compare_to_baselines(
     signal: MarketSignal,
     backtest: BacktestReport,
     metadata: dict,
+    *,
+    cost_model: BacktestCostModel,
 ) -> BaselineComparisonReport:
     ohlcv_path = _primary_ohlcv_path(metadata)
     if ohlcv_path is None:
-        return compare_to_proxy_baselines(signal, backtest)
+        return compare_to_proxy_baselines(signal, backtest, cost_model=cost_model)
     try:
         funding_path = find_freqtrade_funding_file(ohlcv_path, signal.symbol, signal.timeframe)
         if funding_path is None:
-            return compare_to_proxy_baselines(signal, backtest)
+            return compare_to_proxy_baselines(signal, backtest, cost_model=cost_model)
         open_interest_path = find_open_interest_file(ohlcv_path, signal.symbol, signal.timeframe)
         return compare_to_event_level_baselines(
             signal,
@@ -616,9 +623,10 @@ def _compare_to_baselines(
             open_interest_points=None
             if open_interest_path is None
             else load_open_interest_points(open_interest_path, signal.symbol),
+            cost_model=cost_model,
         )
     except Exception:
-        return compare_to_proxy_baselines(signal, backtest)
+        return compare_to_proxy_baselines(signal, backtest, cost_model=cost_model)
 
 
 def _primary_ohlcv_path(metadata: dict) -> Path | None:

@@ -46,8 +46,39 @@ Current free data capability:
   uses historical OI instead of the temporary volume proxy.
 - Binance public endpoints cover spot/futures klines, funding rate, current open interest,
   historical open interest, and spot/futures orderbook snapshots.
+- Binance public aggTrades collection is available for futures orderflow. The collector stores
+  aggregate trades and derives 1m orderflow bars with taker buy/sell volume, taker buy ratio,
+  net taker volume, and cumulative volume delta.
 - Quality reports can flag missing candles, non-positive price/volume, invalid orderbooks, and
   stale funding/open-interest evidence.
+
+### Tick / Orderflow Strategy Testing Readiness
+
+Orderflow can start being used now as a validation layer for event-driven strategies, especially
+Failed Breakout / liquidity-sweep style hypotheses. The currently supported path is:
+
+```text
+Binance aggTrades
+→ AggregateTrade records
+→ 1m OrderflowBar
+→ event acceptance / conflict validation
+→ ReviewSession evidence
+```
+
+This is enough to answer questions like:
+
+- did aggressive buy flow continue after a failed upside breakout?
+- did CVD confirm or conflict with the supposed trapped-side exit?
+- did the strategy fail because the OHLCV trigger was wrong, or because orderflow contradicted it?
+
+Full tick-level strategy backtesting should start after two conditions are met:
+
+1. at least several days of continuous aggTrade/orderflow coverage exists for BTC/ETH/SOL; and
+2. the event replay interface is in place, so a strategy can consume tick/orderflow events without
+   pretending they are ordinary OHLCV candles.
+
+Until then, tick/orderflow should not be used to declare strategy alpha. It should be used to
+upgrade or reject the mechanism evidence behind OHLCV-discovered events.
 
 ## Stage 2: Paid Data By Evidence
 

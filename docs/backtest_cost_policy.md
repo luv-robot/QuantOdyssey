@@ -22,13 +22,13 @@ For lightweight harness event simulations, the per-trade cost is:
 
 ```text
 round_trip_cost =
-  fee_rate
-  + 2 * slippage_bps / 10000
+  2 * (fee_rate + (slippage_bps + spread_bps) / 10000)
   + abs(funding_rate_8h) * holding_hours / 8
 ```
 
-Here `fee_rate` is treated as an already round-trip fee because older event
-simulators historically subtracted it once per completed trade.
+The same helper is used by strategy-family baseline simulations and thesis-level
+baseline comparisons, so gross baseline signals must beat the configured
+round-trip cost before they are treated as net evidence.
 
 ## Overrides
 
@@ -66,7 +66,10 @@ python scripts/run_harness_tasks.py \
 - `total_return`, `profit_factor`, and `max_drawdown` are net metrics.
 - Baseline rows also expose `gross_return`, `net_return`, `cost_drag`,
   `fee_drag`, `slippage_drag`, and `funding_drag`.
+- Thesis-level baseline comparisons report `return_basis=net_after_costs` and
+  persist the cost model used by the review.
+- ReviewSession scorecards must cite the net baseline return basis and the cost
+  assumptions used for the comparison.
 - Mixed-timeframe baseline boards are aligned to a common overlapping window by
   default.
 - Timeframe-separated baseline boards are emitted for supervision and calibration.
-

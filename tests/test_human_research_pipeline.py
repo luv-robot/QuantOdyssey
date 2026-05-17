@@ -86,6 +86,8 @@ def test_human_research_pipeline_persists_full_candidate_chain(tmp_path):
     assert len(baselines) == 3
     assert all(item.baselines for item in baselines)
     assert all(item.best_baseline_name for item in baselines)
+    assert all(item.return_basis == "net_after_costs" for item in baselines)
+    assert all(item.cost_model.fee_rate > 0 for item in baselines)
     robustness_reports = repository.query_robustness_reports()
     assert len(robustness_reports) == 3
     assert all(item.robustness_score >= 0 for item in robustness_reports)
@@ -114,6 +116,8 @@ def test_human_research_pipeline_persists_full_candidate_chain(tmp_path):
     review_sessions = repository.query_review_sessions(thesis_id="thesis_pipeline")
     assert len(review_sessions) == 3
     assert all(session.scorecard for session in review_sessions)
+    assert all(session.scorecard["baseline_return_basis"] == "net_after_costs" for session in review_sessions)
+    assert all("cost_fee_rate" in session.scorecard for session in review_sessions)
     assert all(session.maturity_score.overall_score >= 0 for session in review_sessions)
     findings = repository.query_research_findings(thesis_id="thesis_pipeline")
     assert len(findings) == 3

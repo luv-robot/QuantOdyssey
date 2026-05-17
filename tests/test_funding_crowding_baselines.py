@@ -46,7 +46,12 @@ def test_funding_signal_gets_type_specific_proxy_baselines() -> None:
     assert "simple_failed_breakout_proxy" in names
     assert "opposite_direction_proxy" in names
     assert report.outperformed_best_baseline is True
+    assert report.return_basis == "net_after_costs"
+    assert report.cost_model.fee_rate > 0
+    assert all(item.net_return == item.total_return for item in report.baselines)
+    assert any((item.cost_drag or 0) > 0 for item in report.baselines)
     assert any("Funding-crowding baselines" in finding for finding in report.findings)
+    assert any("net of configured" in finding for finding in report.findings)
 
 
 def test_funding_signal_gets_event_level_baselines_when_market_data_is_available() -> None:
@@ -89,6 +94,8 @@ def test_funding_signal_gets_event_level_baselines_when_market_data_is_available
     assert "opposite_direction_event" in names
     assert "buy_and_hold_event" in names
     assert not any(name.endswith("_proxy") for name in names)
+    assert report.return_basis == "net_after_costs"
+    assert all(item.net_return == item.total_return for item in report.baselines)
     assert any("event-level baseline" in finding for finding in report.findings)
 
 

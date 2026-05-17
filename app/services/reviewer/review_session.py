@@ -38,7 +38,14 @@ def build_review_session(
             "total_return": backtest.total_return,
             "trades": backtest.trades,
             "best_baseline": baseline.best_baseline_name,
+            "best_baseline_return": baseline.best_baseline_return,
+            "baseline_return_basis": baseline.return_basis,
             "outperformed_best_baseline": baseline.outperformed_best_baseline,
+            "cost_fee_rate": baseline.cost_model.fee_rate,
+            "cost_slippage_bps": baseline.cost_model.slippage_bps,
+            "cost_spread_bps": baseline.cost_model.spread_bps,
+            "cost_funding_rate_8h": baseline.cost_model.funding_rate_8h,
+            "cost_funding_source": baseline.cost_model.funding_source,
             "robustness_score": robustness.robustness_score,
             "statistical_confidence_score": robustness.statistical_confidence_score,
             "validation_data_sufficiency_level": event_episode.validation_data_sufficiency_level.value,
@@ -87,7 +94,7 @@ def _build_maturity_score(
     if missing_evidence:
         blockers.append("Missing future evidence: " + ", ".join(missing_evidence) + ".")
     if not baseline.outperformed_best_baseline:
-        blockers.append("Strategy has not outperformed the best matched baseline.")
+        blockers.append("Strategy has not outperformed the best matched net baseline.")
     if backtest.trades < 80:
         blockers.append("Trade sample is below the current maturity threshold.")
     if robustness.robustness_score < 70:
@@ -133,7 +140,10 @@ def _evidence_for(
             ReviewClaim(
                 claim_id="evidence_for_baseline",
                 claim_type="baseline",
-                statement=f"Strategy outperformed the best matched baseline: {baseline.best_baseline_name}.",
+                statement=(
+                    f"Strategy outperformed the best matched net baseline: {baseline.best_baseline_name} "
+                    f"({baseline.return_basis})."
+                ),
                 evidence_refs=[f"baseline:{baseline.report_id}:best_baseline_name"],
             )
         )
@@ -179,7 +189,10 @@ def _evidence_against(
             ReviewClaim(
                 claim_id="evidence_against_baseline",
                 claim_type="baseline",
-                statement="Strategy did not outperform the best matched baseline.",
+                statement=(
+                    f"Strategy did not outperform the best matched net baseline after configured "
+                    f"fee/slippage/funding costs: {baseline.best_baseline_name}."
+                ),
                 evidence_refs=[f"baseline:{baseline.report_id}:outperformed_best_baseline"],
                 severity="high",
             )
@@ -227,6 +240,16 @@ def _blind_spots(
                 severity="medium",
             )
         )
+    if baseline.cost_model.funding_source == "not_available" and baseline.cost_model.funding_rate_8h == 0:
+        claims.append(
+            ReviewClaim(
+                claim_id="blind_spot_default_funding_cost",
+                claim_type="cost_model",
+                statement="Funding cost is still a default assumption; futures strategies need measured funding history.",
+                evidence_refs=[f"baseline:{baseline.report_id}:cost_model"],
+                severity="medium",
+            )
+        )
     return claims
 
 
@@ -268,6 +291,8 @@ def _next_experiments(
     experiments = []
     if any("proxy" in item.name for item in baseline.baselines):
         experiments.append("Replace proxy baselines with event-level baseline backtests.")
+    if not baseline.outperformed_best_baseline:
+        experiments.append("Re-test against same-window net baselines before spending optimizer budget.")
     if research_design.missing_evidence:
         experiments.append("Run a data sufficiency upgrade experiment for: " + ", ".join(research_design.missing_evidence) + ".")
     if robustness.robustness_score < 80:
